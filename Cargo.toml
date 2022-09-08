@@ -1,0 +1,35 @@
+[package]
+name = "zumble"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-rt = "2.7.0"
+actix-server = "2.1.1"
+actix-service = "2.0.2"
+actix-tls = { version= "3.0.3", features = ["rustls"] }
+actix-web = { version = "4.1.0", features = ["rustls"] }
+actix-web-codegen = "4.0.1"
+actix-web-httpauth = "0.8.0"
+aes = "0.8.1"
+async-trait = "0.1.57"
+block-modes = "0.9.1"
+bytes = "1.2.1"
+byteorder = "1.4.3"
+clap = { version = "3.2.20", features = ["derive"] }
+futures = "0.3.24"
+futures-util = "0.3.24"
+lazy_static = "1.4.0"
+log = "0.4.17"
+pretty_env_logger = "0.4.0"
+protobuf = "2.27.1"
+quick-error = "2.0.1"
+ring = "0.16.20"
+rustls = { version = "0.20.6", features = ["tls12"] }
+rustls-pemfile = "1.0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.85"
+tokio = { version = "1.21.0", features = ["full"] }
+tokio-byteorder = "0.3.0"
+tokio-rustls = "0.23.4"
+

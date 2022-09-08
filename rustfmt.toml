@@ -1,0 +1,3 @@
+edition = "2021"
+max_width = 140
+reorder_imports = true
