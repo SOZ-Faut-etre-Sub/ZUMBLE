@@ -4,6 +4,8 @@ A mumble server for FiveM.
 
 Goal is to have an external server handling voice chat for FiveM servers instead of using the built-in voice chat.
 
+**This is a work in progress. Use it at your own risk.**
+
 ## Features
 
  * 100% compatible with FiveM -> drop in replacement for client natives
