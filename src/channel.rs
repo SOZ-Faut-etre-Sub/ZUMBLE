@@ -46,15 +46,20 @@ impl Channel {
 
     pub async fn get_listeners(&self, state: Arc<RwLock<ServerState>>) -> HashMap<u32, Arc<RwLock<Client>>> {
         let mut listening_clients = HashMap::new();
+        let state_read = state.read().await;
 
-        for client in state.read().await.clients.values() {
-            if client.read().await.channel_id == self.id {
-                listening_clients.insert(client.read().await.session_id, client.clone());
+        for client in state_read.clients.values() {
+            {
+                let client_read = client.read().await;
+
+                if client_read.channel_id == self.id {
+                    listening_clients.insert(client_read.session_id, client.clone());
+                }
             }
         }
 
         for client_id in &self.listeners {
-            if let Some(client) = state.read().await.clients.get(client_id) {
+            if let Some(client) = state_read.clients.get(client_id) {
                 listening_clients.insert(*client_id, client.clone());
             }
         }

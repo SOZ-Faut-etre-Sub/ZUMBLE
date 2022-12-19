@@ -56,21 +56,22 @@ pub fn create_tcp_server(
                         let (read, write) = io::split(stream);
                         let (tx, rx) = mpsc::channel(32);
 
+                        let username = authenticate.get_username().to_string();
                         let client = { state.write().await.add_client(version, authenticate, crypt_state, write, tx) };
 
-                        log::info!("new client {} connected", client.read().await.authenticate.get_username());
+                        log::info!("new client {} connected", username);
 
                         match client_run(read, rx, state.clone(), client.clone()).await {
                             Ok(_) => (),
                             Err(MumbleError::Io(err)) => {
                                 if err.kind() != io::ErrorKind::UnexpectedEof {
-                                    log::error!("client error: {}", err);
+                                    log::error!("client {} error: {}", username, err);
                                 }
                             }
-                            Err(e) => log::error!("client error: {}", e),
+                            Err(e) => log::error!("client {} error: {}", username, e),
                         }
 
-                        log::info!("client {} disconnected", client.read().await.authenticate.get_username());
+                        log::info!("client {} disconnected", username);
 
                         {
                             state.write().await.disconnect(client).await;
@@ -92,7 +93,9 @@ pub async fn client_run(
     client: Arc<RwLock<Client>>,
 ) -> Result<(), MumbleError> {
     if let Some(codec_version) = { state.read().await.check_codec().await } {
-        client.read().await.send_message(MessageKind::CodecVersion, &codec_version).await?;
+        {
+            client.read().await.send_message(MessageKind::CodecVersion, &codec_version).await?;
+        }
     }
 
     {
@@ -152,19 +155,23 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                         let late = { client.read().await.crypt_state.read().await.late };
 
                         if late > 100 {
-                            log::error!(
-                                "too many late for client {} udp decrypt error: {}, reset crypt setup",
-                                client.read().await.authenticate.get_username(),
-                                err
-                            );
+                            let send_crypt_setup = {
+                                let client_sync = client.read().await;
+                                log::error!(
+                                    "too many late for client {} udp decrypt error: {}, reset crypt setup",
+                                    client_sync.authenticate.get_username(),
+                                    err
+                                );
 
-                            {
-                                client.read().await.crypt_state.write().await.reset();
-                            }
+                                {
+                                    client_sync.crypt_state.write().await.reset();
+                                }
 
-                            let crypt_setup = { client.read().await.crypt_state.read().await.get_crypt_setup() };
+                                let crypt_setup = { client_sync.crypt_state.read().await.get_crypt_setup() };
+                                client_sync.send_message(MessageKind::CryptSetup, &crypt_setup).await
+                            };
 
-                            match client.read().await.send_message(MessageKind::CryptSetup, &crypt_setup).await {
+                            match send_crypt_setup {
                                 Ok(_) => (),
                                 Err(e) => {
                                     log::error!("send crypt setup error: {}", e);
@@ -206,7 +213,8 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
             }
         };
 
-        let client_packet = packet.to_client_bound(client.read().await.session_id);
+        let session_id = { client.read().await.session_id };
+        let client_packet = packet.to_client_bound(session_id);
 
         match &client_packet {
             VoicePacket::Ping { .. } => {
@@ -223,10 +231,14 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                     }
                 }
             }
-            _ => match client.read().await.publisher.send(client_packet).await {
-                Ok(_) => (),
-                Err(err) => {
-                    log::error!("cannot send voice packet to client: {}", err);
+            _ => {
+                let send_client_packet = { client.read().await.publisher.send(client_packet).await };
+
+                match send_client_packet {
+                    Ok(_) => (),
+                    Err(err) => {
+                        log::error!("cannot send voice packet to client: {}", err);
+                    }
                 }
             },
         };

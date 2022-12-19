@@ -26,8 +26,10 @@ impl Handler for VoicePacket<Clientbound> {
                 0 => {
                     let channel_id = { client.read().await.channel_id };
 
-                    if let Some(channel) = state.read().await.channels.get(&channel_id) {
-                        listening_clients.extend(channel.read().await.get_listeners(state.clone()).await);
+                    if let Some(channel) = { state.read().await.channels.get(&channel_id).cloned() } {
+                        {
+                            listening_clients.extend(channel.read().await.get_listeners(state.clone()).await);
+                        }
                     }
                 }
                 // Voice target (whisper)
@@ -38,21 +40,25 @@ impl Handler for VoicePacket<Clientbound> {
                         let target = target.read().await;
 
                         for client_id in &target.sessions {
-                            if let Some(client) = state.read().await.clients.get(client_id) {
-                                listening_clients.insert(*client_id, client.clone());
+                            if let Some(client) = { state.read().await.clients.get(client_id).cloned() } {
+                                listening_clients.insert(*client_id, client);
                             }
                         }
 
                         for channel_id in &target.channels {
-                            if let Some(channel) = state.read().await.channels.get(channel_id) {
-                                listening_clients.extend(channel.read().await.get_listeners(state.clone()).await);
+                            if let Some(channel) = { state.read().await.channels.get(channel_id).cloned() } {
+                                {
+                                    listening_clients.extend(channel.read().await.get_listeners(state.clone()).await);
+                                }
                             }
                         }
                     }
                 }
                 // Loopback
                 31 => {
-                    client.write().await.send_voice_packet(&self).await?;
+                    {
+                        client.write().await.send_voice_packet(&self).await?;
+                    }
 
                     return Ok(());
                 }
@@ -69,7 +75,9 @@ impl Handler for VoicePacket<Clientbound> {
                             return;
                         }
 
-                        match listening_client.write().await.send_voice_packet(&self).await {
+                        let listening_client_result = { listening_client.write().await.send_voice_packet(&self).await };
+
+                        match listening_client_result {
                             Ok(_) => (),
                             Err(err) => log::error!("failed to send voice packet to client {}: {}", id, err),
                         }

@@ -129,8 +129,12 @@ impl ServerState {
 
     pub async fn get_client_by_name(&self, name: &str) -> Option<Arc<RwLock<Client>>> {
         for client in self.clients.values() {
-            if client.read().await.authenticate.get_username() == name {
-                return Some(client.clone());
+            {
+                let client_read = client.read().await;
+
+                if client_read.authenticate.get_username() == name {
+                    return Some(client.clone());
+                }
             }
         }
 
@@ -138,8 +142,12 @@ impl ServerState {
     }
 
     pub async fn set_client_socket(&mut self, client: Arc<RwLock<Client>>, addr: SocketAddr) {
-        if let Some(exiting_addr) = client.read().await.udp_socket_addr {
-            self.clients_by_socket.remove(&exiting_addr);
+        {
+            let client_read = client.read().await;
+
+            if let Some(exiting_addr) = client_read.udp_socket_addr {
+                self.clients_by_socket.remove(&exiting_addr);
+            }
         }
 
         {
@@ -171,31 +179,41 @@ impl ServerState {
 
     async fn check_leave_channel(&self, leave_channel_id: u32) -> Option<u32> {
         for client in self.clients.values() {
-            if client.read().await.channel_id == leave_channel_id {
-                return None;
+            {
+                let client = client.read().await;
+
+                if client.channel_id == leave_channel_id {
+                    return None;
+                }
             }
         }
 
         for channel in self.channels.values() {
-            if let Some(parent_id) = channel.read().await.parent_id {
-                if parent_id == leave_channel_id {
+            {
+                let channel = channel.read().await;
+
+                if channel.parent_id == Some(leave_channel_id) {
                     return None;
                 }
             }
         }
 
         if let Some(channel) = self.channels.get(&leave_channel_id) {
-            if channel.read().await.temporary {
-                // Broadcast channel remove
-                let mut channel_remove = ChannelRemove::new();
-                channel_remove.set_channel_id(leave_channel_id);
+            {
+                let channel = channel.read().await;
 
-                match self.broadcast_message(MessageKind::ChannelRemove, &channel_remove).await {
-                    Ok(_) => (),
-                    Err(e) => log::error!("failed to send channel remove: {:?}", e),
+                if channel.temporary {
+                    // Broadcast channel remove
+                    let mut channel_remove = ChannelRemove::new();
+                    channel_remove.set_channel_id(leave_channel_id);
+
+                    match self.broadcast_message(MessageKind::ChannelRemove, &channel_remove).await {
+                        Ok(_) => (),
+                        Err(e) => log::error!("failed to send channel remove: {:?}", e),
+                    }
+
+                    return Some(leave_channel_id);
                 }
-
-                return Some(leave_channel_id);
             }
 
             return None;
@@ -233,8 +251,12 @@ impl ServerState {
 
     pub async fn get_channel_by_name(&self, name: &str) -> Option<Arc<RwLock<Channel>>> {
         for channel in self.channels.values() {
-            if channel.read().await.name.as_str() == name {
-                return Some(channel.clone());
+            {
+                let channel_read = channel.read().await;
+
+                if channel_read.name == name {
+                    return Some(channel.clone());
+                }
             }
         }
 
@@ -247,8 +269,12 @@ impl ServerState {
         let mut versions = HashMap::new();
 
         for client in self.clients.values() {
-            for version in &client.read().await.codecs {
-                *versions.entry(*version).or_insert(0) += 1;
+            {
+                let client = client.read().await;
+
+                for version in &client.codecs {
+                    *versions.entry(*version).or_insert(0) += 1;
+                }
             }
         }
 
@@ -297,20 +323,22 @@ impl ServerState {
         let mut packet = None;
 
         for c in self.clients.values() {
-            let client_read = c.read().await;
+            {
+                let client_read = c.read().await;
 
-            let mut crypt_state = client_read.crypt_state.write().await;
-            let mut try_buf = bytes.clone();
+                let mut crypt_state = client_read.crypt_state.write().await;
+                let mut try_buf = bytes.clone();
 
-            match crypt_state.decrypt(&mut try_buf) {
-                Ok(p) => {
-                    packet = Some(p);
-                    client = Some(c.clone());
-                }
-                Err(err) => {
-                    log::debug!("failed to decrypt packet: {:?}, continue to next client", err);
+                match crypt_state.decrypt(&mut try_buf) {
+                    Ok(p) => {
+                        packet = Some(p);
+                        client = Some(c.clone());
+                    }
+                    Err(err) => {
+                        log::debug!("failed to decrypt packet: {:?}, continue to next client", err);
 
-                    continue;
+                        continue;
+                    }
                 }
             }
         }
@@ -319,21 +347,31 @@ impl ServerState {
     }
 
     pub async fn disconnect(&mut self, client: Arc<RwLock<Client>>) {
-        self.clients.remove(&client.read().await.session_id);
-
-        if let Some(socket_addr) = client.read().await.udp_socket_addr {
-            self.clients_by_socket.remove(&socket_addr);
-        }
-
         let client_id = { client.read().await.session_id };
 
+        self.clients.remove(&client_id);
+
+        {
+            if let Some(socket_addr) = client.read().await.udp_socket_addr {
+                self.clients_by_socket.remove(&socket_addr);
+            }
+        }
+
         for channel in self.channels.values() {
-            channel.write().await.listeners.remove(&client_id);
+            {
+                channel.write().await.listeners.remove(&client_id);
+            }
         }
 
         for client in self.clients.values() {
-            for target in &client.read().await.targets {
-                target.write().await.sessions.remove(&client_id);
+            {
+                let client_read = client.read().await;
+
+                for target in &client_read.targets {
+                    {
+                        target.write().await.sessions.remove(&client_id);
+                    }
+                }
             }
         }
 
@@ -343,7 +381,9 @@ impl ServerState {
 
         self.broadcast_message(MessageKind::UserRemove, &remove).await.unwrap();
 
-        self.check_leave_channel(client.read().await.channel_id).await;
+        let channel_id = { client.read().await.channel_id };
+
+        self.check_leave_channel(channel_id).await;
     }
 
     fn get_free_session_id(&self) -> u32 {

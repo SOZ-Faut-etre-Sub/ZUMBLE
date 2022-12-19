@@ -124,18 +124,22 @@ impl Client {
     pub async fn sync_client_and_channels(&self, state: &Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
         let mut stream_write = self.write.write().await;
 
-        // Send channel states
-        for channel in state.read().await.channels.values() {
-            let channel_state = channel.read().await.get_channel_state();
+        {
+            let state_read = state.read().await;
 
-            send_message(MessageKind::ChannelState, &channel_state, stream_write.deref_mut()).await?;
-        }
+            // Send channel states
+            for channel in state_read.channels.values() {
+                let channel_state = { channel.read().await.get_channel_state() };
 
-        // Send user states
-        for client in state.read().await.clients.values() {
-            let user_state = client.read().await.get_user_state();
+                send_message(MessageKind::ChannelState, &channel_state, stream_write.deref_mut()).await?;
+            }
 
-            send_message(MessageKind::UserState, &user_state, stream_write.deref_mut()).await?;
+            // Send user states
+            for client in state_read.clients.values() {
+                let user_state = { client.read().await.get_user_state() };
+
+                send_message(MessageKind::UserState, &user_state, stream_write.deref_mut()).await?;
+            }
         }
 
         Ok(())

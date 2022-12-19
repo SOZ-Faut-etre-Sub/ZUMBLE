@@ -32,7 +32,7 @@ pub async fn get_mute(user: web::Path<String>, state: web::Data<Arc<RwLock<Serve
     match client {
         Some(client) => {
             let mute = Mute {
-                mute: client.read().await.mute,
+                mute: { client.read().await.mute },
                 user: username,
             };
 

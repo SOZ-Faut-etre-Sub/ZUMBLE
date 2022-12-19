@@ -37,7 +37,7 @@ impl Handler for ChannelState {
 
         let name = self.get_name();
 
-        if !state.read().await.channels.contains_key(&self.get_parent()) {
+        if !{ state.read().await.channels.contains_key(&self.get_parent()) } {
             log::warn!("cannot create channel: parent channel does not exist");
 
             return Ok(());
@@ -68,13 +68,17 @@ impl Handler for ChannelState {
             channel_state.get_channel_id()
         };
 
-        let leave_channel_id = match state.read().await.set_client_channel(client.clone(), new_channel_id).await {
+        let leave_channel_id_result = { state.read().await.set_client_channel(client.clone(), new_channel_id).await };
+
+        let leave_channel_id = match leave_channel_id_result {
             Ok(Some(leave_channel_id)) => leave_channel_id,
             Ok(None) => return Ok(()),
             Err(_) => return Ok(()),
         };
 
-        state.write().await.channels.remove(&leave_channel_id);
+        {
+            state.write().await.channels.remove(&leave_channel_id);
+        }
 
         Ok(())
     }

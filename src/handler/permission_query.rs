@@ -38,7 +38,9 @@ impl Handler for PermissionQuery {
         pq.set_channel_id(self.get_channel_id());
         pq.set_permissions(PERM_ADMIN);
 
-        client.read().await.send_message(MessageKind::PermissionQuery, &pq).await?;
+        {
+            client.read().await.send_message(MessageKind::PermissionQuery, &pq).await?;
+        }
 
         Ok(())
     }
