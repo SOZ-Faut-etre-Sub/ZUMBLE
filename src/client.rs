@@ -102,7 +102,7 @@ impl Client {
     }
 
     pub async fn send_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
-        log::trace!(
+        tracing::trace!(
             "[{}] [{}] send message: {:?}, {:?}",
             self.authenticate.get_username(),
             self.session_id,

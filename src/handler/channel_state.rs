@@ -12,25 +12,25 @@ use tokio::sync::RwLock;
 impl Handler for ChannelState {
     async fn handle(&self, state: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
         if self.has_channel_id() {
-            log::warn!("editing channel is not supported");
+            tracing::warn!("editing channel is not supported");
 
             return Ok(());
         }
 
         if !self.has_parent() {
-            log::warn!("cannot create channel: channel must have a parent");
+            tracing::warn!("cannot create channel: channel must have a parent");
 
             return Ok(());
         }
 
         if !self.has_name() {
-            log::warn!("cannot create channel: channel must have a name");
+            tracing::warn!("cannot create channel: channel must have a name");
 
             return Ok(());
         }
 
         if !self.get_temporary() {
-            log::warn!("cannot create channel: channel must be temporary");
+            tracing::warn!("cannot create channel: channel must be temporary");
 
             return Ok(());
         }
@@ -38,7 +38,7 @@ impl Handler for ChannelState {
         let name = self.get_name();
 
         if !{ state.read().await.channels.contains_key(&self.get_parent()) } {
-            log::warn!("cannot create channel: parent channel does not exist");
+            tracing::warn!("cannot create channel: parent channel does not exist");
 
             return Ok(());
         }

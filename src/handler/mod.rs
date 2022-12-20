@@ -42,7 +42,7 @@ impl MessageHandler {
             (client.authenticate.get_username().to_string(), client.session_id)
         };
 
-        log::trace!(
+        tracing::trace!(
             "[{}] [{}] handle message: {:?}, {:?}",
             username,
             client_id,
@@ -77,7 +77,7 @@ impl MessageHandler {
                         let voice_packet = match decode_voice_packet::<Serverbound>(&mut bytes) {
                             Ok(voice_packet) => voice_packet,
                             Err(e) => {
-                                log::error!("error decoding voice packet: {}", e);
+                                tracing::error!("error decoding voice packet: {}", e);
 
                                 return Ok(());
                             }
@@ -95,7 +95,7 @@ impl MessageHandler {
                     MessageKind::UserState => return Self::try_handle::<mumble::UserState>(&buf, state, client).await,
                     MessageKind::VoiceTarget => return Self::try_handle::<mumble::VoiceTarget>(&buf, state, client).await,
                     _ => {
-                        log::warn!("unsupported message kind: {:?}", message_kind);
+                        tracing::warn!("unsupported message kind: {:?}", message_kind);
 
                         return Ok(());
                     }

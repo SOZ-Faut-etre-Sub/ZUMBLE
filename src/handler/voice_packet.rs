@@ -63,7 +63,7 @@ impl Handler for VoicePacket<Clientbound> {
                     return Ok(());
                 }
                 _ => {
-                    log::error!("invalid voice target: {}", *target);
+                    tracing::error!("invalid voice target: {}", *target);
                 }
             }
 
@@ -79,7 +79,7 @@ impl Handler for VoicePacket<Clientbound> {
 
                         match listening_client_result {
                             Ok(_) => (),
-                            Err(err) => log::error!("failed to send voice packet to client {}: {}", id, err),
+                            Err(err) => tracing::error!("failed to send voice packet to client {}: {}", id, err),
                         }
                     }
                 })

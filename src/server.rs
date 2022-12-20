@@ -42,13 +42,13 @@ pub fn create_tcp_server(
 
                     async move {
                         let mut stream = acceptor.accept(stream).await.map_err(|e| {
-                            log::error!("accept error: {}", e);
+                            tracing::error!("accept error: {}", e);
 
                             e
                         })?;
 
                         let (version, authenticate, crypt_state) = Client::init(&mut stream, server_version).await.map_err(|e| {
-                            log::error!("init client error: {}", e);
+                            tracing::error!("init client error: {}", e);
 
                             e
                         })?;
@@ -59,19 +59,19 @@ pub fn create_tcp_server(
                         let username = authenticate.get_username().to_string();
                         let client = { state.write().await.add_client(version, authenticate, crypt_state, write, tx) };
 
-                        log::info!("new client {} connected", username);
+                        tracing::info!("new client {} connected", username);
 
                         match client_run(read, rx, state.clone(), client.clone()).await {
                             Ok(_) => (),
                             Err(MumbleError::Io(err)) => {
                                 if err.kind() != io::ErrorKind::UnexpectedEof {
-                                    log::error!("client {} error: {}", username, err);
+                                    tracing::error!("client {} error: {}", username, err);
                                 }
                             }
-                            Err(e) => log::error!("client {} error: {}", username, e),
+                            Err(e) => tracing::error!("client {} error: {}", username, e),
                         }
 
-                        log::info!("client {} disconnected", username);
+                        tracing::info!("client {} disconnected", username);
 
                         {
                             state.write().await.disconnect(client).await;
@@ -102,7 +102,7 @@ pub async fn client_run(
         let client_sync = client.read().await;
 
         client_sync.sync_client_and_channels(&state).await.map_err(|e| {
-            log::error!("init client error: {}", e);
+            tracing::error!("init client error: {}", e);
 
             e
         })?;
@@ -157,7 +157,7 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                         if late > 100 {
                             let send_crypt_setup = {
                                 let client_sync = client.read().await;
-                                log::error!(
+                                tracing::error!(
                                     "too many late for client {} udp decrypt error: {}, reset crypt setup",
                                     client_sync.authenticate.get_username(),
                                     err
@@ -174,12 +174,12 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                             match send_crypt_setup {
                                 Ok(_) => (),
                                 Err(e) => {
-                                    log::error!("send crypt setup error: {}", e);
+                                    tracing::error!("send crypt setup error: {}", e);
                                 }
                             }
                         }
 
-                        log::warn!("client decrypt error: {}", err);
+                        tracing::warn!("client decrypt error: {}", err);
 
                         continue;
                     }
@@ -191,7 +191,7 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                 match (client_opt, packet_opt) {
                     (Some(client), Some(packet)) => {
                         {
-                            log::info!(
+                            tracing::info!(
                                 "UPD connected client {} on {}",
                                 client.read().await.authenticate.get_username(),
                                 addr
@@ -205,7 +205,7 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                         (client, packet)
                     }
                     _ => {
-                        log::error!("unknown client from address {}", addr);
+                        tracing::error!("unknown client from address {}", addr);
 
                         continue;
                     }
@@ -227,7 +227,7 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                 match socket.send_to(&dest.freeze()[..], addr).await {
                     Ok(_) => (),
                     Err(err) => {
-                        log::error!("cannot send ping udp packet: {}", err);
+                        tracing::error!("cannot send ping udp packet: {}", err);
                     }
                 }
             }
@@ -237,10 +237,10 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                 match send_client_packet {
                     Ok(_) => (),
                     Err(err) => {
-                        log::error!("cannot send voice packet to client: {}", err);
+                        tracing::error!("cannot send voice packet to client: {}", err);
                     }
                 }
-            },
+            }
         };
     }
 }

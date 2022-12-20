@@ -20,7 +20,7 @@ impl Handler for VoiceTarget {
         let target = match target_opt {
             Some(target) => target,
             None => {
-                log::error!("invalid voice target id: {}", self.get_id());
+                tracing::error!("invalid voice target id: {}", self.get_id());
 
                 return Ok(());
             }

@@ -83,7 +83,7 @@ pub fn message_to_bytes<T: Message>(kind: MessageKind, message: &T) -> Result<By
 }
 
 pub async fn send_message<T: Message, S: AsyncWrite + Unpin>(kind: MessageKind, message: &T, stream: &mut S) -> Result<(), MumbleError> {
-    log::trace!("send message: {:?}, {:?}", std::any::type_name::<T>(), message);
+    tracing::trace!("send message: {:?}, {:?}", std::any::type_name::<T>(), message);
 
     let bytes = message_to_bytes(kind, message)?;
     stream.write_all(bytes.as_ref()).await?;
@@ -113,7 +113,7 @@ pub async fn get_message<T: Message + Handler, S: AsyncRead + Unpin>(stream: &mu
 
     let message = T::parse_from_bytes(data.as_slice())?;
 
-    log::trace!("received message: {:?}, {:?}", std::any::type_name::<T>(), message);
+    tracing::trace!("received message: {:?}, {:?}", std::any::type_name::<T>(), message);
 
     Ok(message)
 }

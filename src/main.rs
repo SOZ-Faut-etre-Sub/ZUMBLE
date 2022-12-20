@@ -77,14 +77,14 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[actix_web_codegen::main]
 async fn main() {
-    pretty_env_logger::init();
+    tracing_subscriber::fmt::init();
 
     let args = Args::parse();
 
     let certs = match load_certs(args.cert.as_str()) {
         Ok(certs) => certs,
         Err(e) => {
-            log::error!("cannot load certificate at path {}: {}", args.cert, e);
+            tracing::error!("cannot load certificate at path {}: {}", args.cert, e);
             return;
         }
     };
@@ -92,7 +92,7 @@ async fn main() {
     let mut keys = match load_keys(args.key.as_str()) {
         Ok(k) => k,
         Err(e) => {
-            log::error!("cannot load key at path {}: {}", args.key, e);
+            tracing::error!("cannot load key at path {}: {}", args.key, e);
             return;
         }
     };
@@ -105,14 +105,14 @@ async fn main() {
     {
         Ok(config) => config,
         Err(e) => {
-            log::error!("cannot create tls config: {}", e);
+            tracing::error!("cannot create tls config: {}", e);
             return;
         }
     };
 
     let acceptor = TlsAcceptor::from(Arc::new(config.clone()));
 
-    log::info!("server start listening on {}", args.listen);
+    tracing::info!("server start listening on {}", args.listen);
 
     // Simulate 1.2.4 protocol version
     let version = 1 << 16 | 2 << 8 | 4;
@@ -155,7 +155,7 @@ async fn main() {
     match futures::future::try_join_all(waiting_list).await {
         Ok(_) => (),
         Err(e) => {
-            log::error!("agent error: {}", e);
+            tracing::error!("agent error: {}", e);
         }
     }
 }

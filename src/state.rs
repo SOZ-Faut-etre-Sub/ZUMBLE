@@ -158,7 +158,7 @@ impl ServerState {
     }
 
     pub async fn broadcast_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
-        log::trace!("broadcast message: {:?}, {:?}", std::any::type_name::<T>(), message);
+        tracing::trace!("broadcast message: {:?}, {:?}", std::any::type_name::<T>(), message);
 
         let bytes = message_to_bytes(kind, message)?;
         let cursor = bytes.as_ref();
@@ -168,7 +168,7 @@ impl ServerState {
                 {
                     match client.clone().write().await.send(cursor).await {
                         Ok(_) => (),
-                        Err(e) => log::error!("failed to send message: {:?}", e),
+                        Err(e) => tracing::error!("failed to send message: {:?}", e),
                     }
                 }
             })
@@ -209,7 +209,7 @@ impl ServerState {
 
                     match self.broadcast_message(MessageKind::ChannelRemove, &channel_remove).await {
                         Ok(_) => (),
-                        Err(e) => log::error!("failed to send channel remove: {:?}", e),
+                        Err(e) => tracing::error!("failed to send channel remove: {:?}", e),
                     }
 
                     return Some(leave_channel_id);
@@ -225,7 +225,7 @@ impl ServerState {
 
         match self.broadcast_message(MessageKind::ChannelRemove, &channel_remove).await {
             Ok(_) => (),
-            Err(e) => log::error!("failed to send channel remove: {:?}", e),
+            Err(e) => tracing::error!("failed to send channel remove: {:?}", e),
         }
 
         return Some(leave_channel_id);
@@ -240,7 +240,7 @@ impl ServerState {
 
             match self.broadcast_message(MessageKind::UserState, &user_state).await {
                 Ok(_) => (),
-                Err(e) => log::error!("failed to send user state: {:?}", e),
+                Err(e) => tracing::error!("failed to send user state: {:?}", e),
             }
 
             return Ok(self.check_leave_channel(leave_channel_id).await);
@@ -307,7 +307,7 @@ impl ServerState {
         match self.broadcast_message(MessageKind::CodecVersion, &codec_version).await {
             Ok(_) => (),
             Err(e) => {
-                log::error!("failed to broadcast codec version: {:?}", e);
+                tracing::error!("failed to broadcast codec version: {:?}", e);
             }
         }
 
@@ -335,7 +335,7 @@ impl ServerState {
                         client = Some(c.clone());
                     }
                     Err(err) => {
-                        log::debug!("failed to decrypt packet: {:?}, continue to next client", err);
+                        tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
 
                         continue;
                     }

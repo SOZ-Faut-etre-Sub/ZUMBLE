@@ -48,14 +48,14 @@ pub fn create_http_server(
         server
             .bind_rustls(listen, tls_config)
             .map_err(|e| {
-                log::error!("bind error: {}", e);
+                tracing::error!("bind error: {}", e);
             })
             .ok()?
     } else {
         server
             .bind(listen)
             .map_err(|e| {
-                log::error!("bind error: {}", e);
+                tracing::error!("bind error: {}", e);
             })
             .ok()?
     };
