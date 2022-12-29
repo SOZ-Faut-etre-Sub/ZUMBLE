@@ -115,6 +115,15 @@ pub async fn client_run(
         client_sync.send_server_config().await?;
     }
 
+    let user_state = { client.read().await.get_user_state() };
+
+    {
+        match state.read().await.broadcast_message(MessageKind::UserState, &user_state).await {
+            Ok(_) => (),
+            Err(e) => tracing::error!("failed to send user state: {:?}", e),
+        }
+    }
+
     loop {
         MessageHandler::handle(&mut read, &mut receiver, state.clone(), client.clone()).await?
     }
