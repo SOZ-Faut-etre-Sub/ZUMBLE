@@ -11,6 +11,7 @@ mod crypt;
 mod error;
 mod handler;
 mod http;
+mod metrics;
 mod proto;
 mod server;
 mod state;
@@ -112,7 +113,8 @@ async fn main() {
 
     let acceptor = TlsAcceptor::from(Arc::new(config.clone()));
 
-    tracing::info!("server start listening on {}", args.listen);
+    tracing::info!("tcp/udp server start listening on {}", args.listen);
+    tracing::info!("http server start listening on {}", args.http_listen);
 
     // Simulate 1.2.4 protocol version
     let version = 1 << 16 | 2 << 8 | 4;

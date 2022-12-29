@@ -1,3 +1,4 @@
+mod metrics;
 mod mute;
 
 use crate::ServerState;
@@ -40,6 +41,7 @@ pub fn create_http_server(
             .app_data(web::Data::new(state.clone()))
             .wrap(auth)
             .wrap(middleware::Logger::default())
+            .service(metrics::get_metrics)
             .service(mute::get_mute)
             .service(mute::post_mute)
     });

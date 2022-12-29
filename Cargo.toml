@@ -32,4 +32,5 @@ tokio-byteorder = "0.3.0"
 tokio-rustls = "0.23.4"
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
+prometheus = { version  = "0.13.3", features = ["process"] }
 

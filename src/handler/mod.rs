@@ -69,6 +69,9 @@ impl MessageHandler {
 
                 let message_kind = MessageKind::try_from(kind)?;
 
+                crate::metrics::MESSAGES_TOTAL.with_label_values(&["tcp", "input", message_kind.to_string().as_str()]).inc();
+                crate::metrics::MESSAGES_BYTES.with_label_values(&["tcp", "input", message_kind.to_string().as_str()]).inc_by(buf.len() as u64);
+
                 match message_kind {
                     MessageKind::Version => return Self::try_handle::<mumble::Version>(&buf, state, client).await,
                     MessageKind::UDPTunnel => {

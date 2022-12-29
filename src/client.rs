@@ -112,7 +112,17 @@ impl Client {
 
         let bytes = message_to_bytes(kind, message)?;
 
-        self.send(bytes.as_ref()).await
+        self.send(bytes.as_ref()).await?;
+
+        crate::metrics::MESSAGES_TOTAL
+            .with_label_values(&["tcp", "output", kind.to_string().as_str()])
+            .inc();
+
+        crate::metrics::MESSAGES_BYTES
+            .with_label_values(&["tcp", "output", kind.to_string().as_str()])
+            .inc_by(bytes.len() as u64);
+
+        Ok(())
     }
 
     pub async fn send_my_user_state(&self) -> Result<(), MumbleError> {
@@ -167,7 +177,18 @@ impl Client {
         if let Some(addr) = self.udp_socket_addr {
             let mut dest = BytesMut::new();
             self.crypt_state.write().await.encrypt(packet, &mut dest);
-            self.udp_socket.send_to(&dest.freeze()[..], addr).await?;
+
+            let buf = &dest.freeze()[..];
+
+            self.udp_socket.send_to(buf, addr).await?;
+
+            crate::metrics::MESSAGES_TOTAL
+                .with_label_values(&["udp", "output", "VoicePacket"])
+                .inc();
+
+            crate::metrics::MESSAGES_BYTES
+                .with_label_values(&["udp", "output", "VoicePacket"])
+                .inc_by(buf.len() as u64);
 
             return Ok(());
         }
@@ -181,6 +202,14 @@ impl Client {
         stream_write.write_u16(MessageKind::UDPTunnel as u16).await?;
         stream_write.write_u32(bytes.len() as u32).await?;
         stream_write.write_all(bytes.as_ref()).await?;
+
+        crate::metrics::MESSAGES_TOTAL
+            .with_label_values(&["tcp", "output", "VoicePacket"])
+            .inc();
+
+        crate::metrics::MESSAGES_BYTES
+            .with_label_values(&["tcp", "output", "VoicePacket"])
+            .inc_by((bytes.len() + 6) as u64);
 
         Ok(())
     }

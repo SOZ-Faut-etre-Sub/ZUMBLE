@@ -59,6 +59,8 @@ pub fn create_tcp_server(
                         let username = authenticate.get_username().to_string();
                         let client = { state.write().await.add_client(version, authenticate, crypt_state, write, tx) };
 
+                        crate::metrics::CLIENTS_TOTAL.inc();
+
                         tracing::info!("new client {} connected", username);
 
                         match client_run(read, rx, state.clone(), client.clone()).await {
@@ -76,6 +78,8 @@ pub fn create_tcp_server(
                         {
                             state.write().await.disconnect(client).await;
                         }
+
+                        crate::metrics::CLIENTS_TOTAL.dec();
 
                         Ok::<(), MumbleError>(())
                     }
@@ -140,6 +144,14 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                 .await
                 .expect("cannot send udp packet");
 
+            crate::metrics::MESSAGES_TOTAL
+                .with_label_values(&["udp", "input", "PingAnonymous"])
+                .inc();
+
+            crate::metrics::MESSAGES_BYTES
+                .with_label_values(&["udp", "input", "PingAnonymous"])
+                .inc_by(size as u64);
+
             continue;
         }
 
@@ -181,6 +193,14 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
 
                         tracing::warn!("client decrypt error: {}", err);
 
+                        crate::metrics::MESSAGES_TOTAL
+                            .with_label_values(&["udp", "input", "VoicePacket"])
+                            .inc();
+
+                        crate::metrics::MESSAGES_BYTES
+                            .with_label_values(&["udp", "input", "VoicePacket"])
+                            .inc_by(size as u64);
+
                         continue;
                     }
                 }
@@ -207,6 +227,14 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                     _ => {
                         tracing::error!("unknown client from address {}", addr);
 
+                        crate::metrics::MESSAGES_TOTAL
+                            .with_label_values(&["udp", "input", "VoicePacket"])
+                            .inc();
+
+                        crate::metrics::MESSAGES_BYTES
+                            .with_label_values(&["udp", "input", "VoicePacket"])
+                            .inc_by(size as u64);
+
                         continue;
                     }
                 }
@@ -218,20 +246,46 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
 
         match &client_packet {
             VoicePacket::Ping { .. } => {
+                crate::metrics::MESSAGES_TOTAL
+                    .with_label_values(&["udp", "input", "VoicePing"])
+                    .inc();
+
+                crate::metrics::MESSAGES_BYTES
+                    .with_label_values(&["udp", "input", "VoicePing"])
+                    .inc_by(size as u64);
+
                 let mut dest = BytesMut::new();
 
                 {
                     client.read().await.crypt_state.write().await.encrypt(&client_packet, &mut dest);
                 }
 
-                match socket.send_to(&dest.freeze()[..], addr).await {
-                    Ok(_) => (),
+                let buf = &dest.freeze()[..];
+
+                match socket.send_to(buf, addr).await {
+                    Ok(_) => {
+                        crate::metrics::MESSAGES_TOTAL
+                            .with_label_values(&["udp", "output", "VoicePing"])
+                            .inc();
+
+                        crate::metrics::MESSAGES_BYTES
+                            .with_label_values(&["udp", "output", "VoicePing"])
+                            .inc_by(buf.len() as u64);
+                    }
                     Err(err) => {
                         tracing::error!("cannot send ping udp packet: {}", err);
                     }
                 }
             }
             _ => {
+                crate::metrics::MESSAGES_TOTAL
+                    .with_label_values(&["udp", "input", "VoicePacket"])
+                    .inc();
+
+                crate::metrics::MESSAGES_BYTES
+                    .with_label_values(&["udp", "input", "VoicePacket"])
+                    .inc_by(size as u64);
+
                 let send_client_packet = { client.read().await.publisher.send(client_packet).await };
 
                 match send_client_packet {

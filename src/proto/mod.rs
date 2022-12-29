@@ -2,6 +2,7 @@ use crate::error::MumbleError;
 use crate::handler::Handler;
 use bytes::{BufMut, Bytes, BytesMut};
 use protobuf::Message;
+use std::fmt;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub mod mumble;
@@ -34,6 +35,39 @@ pub enum MessageKind {
     RequestBlob = 23,
     ServerConfig = 24,
     SuggestConfig = 25,
+}
+
+impl fmt::Display for MessageKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MessageKind::Version => write!(f, "Version"),
+            MessageKind::UDPTunnel => write!(f, "UDPTunnel"),
+            MessageKind::Authenticate => write!(f, "Authenticate"),
+            MessageKind::Ping => write!(f, "Ping"),
+            MessageKind::Reject => write!(f, "Reject"),
+            MessageKind::ServerSync => write!(f, "ServerSync"),
+            MessageKind::ChannelRemove => write!(f, "ChannelRemove"),
+            MessageKind::ChannelState => write!(f, "ChannelState"),
+            MessageKind::UserRemove => write!(f, "UserRemove"),
+            MessageKind::UserState => write!(f, "UserState"),
+            MessageKind::BanList => write!(f, "BanList"),
+            MessageKind::TextMessage => write!(f, "TextMessage"),
+            MessageKind::PermissionDenied => write!(f, "PermissionDenied"),
+            MessageKind::ACL => write!(f, "ACL"),
+            MessageKind::QueryUsers => write!(f, "QueryUsers"),
+            MessageKind::CryptSetup => write!(f, "CryptSetup"),
+            MessageKind::ContextActionModify => write!(f, "ContextActionModify"),
+            MessageKind::ContextAction => write!(f, "ContextAction"),
+            MessageKind::UserList => write!(f, "UserList"),
+            MessageKind::VoiceTarget => write!(f, "VoiceTarget"),
+            MessageKind::PermissionQuery => write!(f, "PermissionQuery"),
+            MessageKind::CodecVersion => write!(f, "CodecVersion"),
+            MessageKind::UserStats => write!(f, "UserStats"),
+            MessageKind::RequestBlob => write!(f, "RequestBlob"),
+            MessageKind::ServerConfig => write!(f, "ServerConfig"),
+            MessageKind::SuggestConfig => write!(f, "SuggestConfig"),
+        }
+    }
 }
 
 impl TryFrom<u16> for MessageKind {
