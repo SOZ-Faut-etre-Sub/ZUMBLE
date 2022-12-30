@@ -319,20 +319,20 @@ impl ServerState {
     }
 
     pub async fn find_client_for_packet(&self, bytes: &mut BytesMut) -> (Option<Arc<RwLock<Client>>>, Option<VoicePacket<Serverbound>>) {
-        let mut client = None;
-        let mut packet = None;
-
         for c in self.clients.values() {
             {
                 let client_read = c.read().await;
+
+                if client_read.udp_socket_addr.is_some() {
+                    continue;
+                }
 
                 let mut crypt_state = client_read.crypt_state.write().await;
                 let mut try_buf = bytes.clone();
 
                 match crypt_state.decrypt(&mut try_buf) {
                     Ok(p) => {
-                        packet = Some(p);
-                        client = Some(c.clone());
+                        return (Some(c.clone()), Some(p));
                     }
                     Err(err) => {
                         tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
@@ -343,7 +343,27 @@ impl ServerState {
             }
         }
 
-        (client, packet)
+        for c in self.clients.values() {
+            {
+                let client_read = c.read().await;
+
+                let mut crypt_state = client_read.crypt_state.write().await;
+                let mut try_buf = bytes.clone();
+
+                match crypt_state.decrypt(&mut try_buf) {
+                    Ok(p) => {
+                        return (Some(c.clone()), Some(p));
+                    }
+                    Err(err) => {
+                        tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
+
+                        continue;
+                    }
+                }
+            }
+        }
+
+        (None, None)
     }
 
     pub async fn disconnect(&mut self, client: Arc<RwLock<Client>>) {

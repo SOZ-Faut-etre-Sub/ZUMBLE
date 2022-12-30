@@ -1,5 +1,5 @@
 use crate::client::Client;
-use crate::error::MumbleError;
+use crate::error::{DecryptError, MumbleError};
 use crate::handler::MessageHandler;
 use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
@@ -173,13 +173,36 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                 match decrypt_result {
                     Ok(p) => (client, p),
                     Err(err) => {
-                        let late = { client.read().await.crypt_state.read().await.late };
+                        let username = { client.read().await.authenticate.get_username().to_string() };
+                        tracing::warn!("client {} decrypt error: {}", username, err);
 
-                        if late > 100 {
+                        crate::metrics::MESSAGES_TOTAL
+                            .with_label_values(&["udp", "input", "VoicePacket"])
+                            .inc();
+
+                        crate::metrics::MESSAGES_BYTES
+                            .with_label_values(&["udp", "input", "VoicePacket"])
+                            .inc_by(size as u64);
+
+                        let restart_crypt = match err {
+                            DecryptError::Late => {
+                                let late = { client.read().await.crypt_state.read().await.late };
+
+                                if late > 100 {
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            _ => true,
+                        };
+
+                        if restart_crypt {
                             let send_crypt_setup = {
                                 let client_sync = client.read().await;
+
                                 tracing::error!(
-                                    "too many late for client {} udp decrypt error: {}, reset crypt setup",
+                                    "client {} udp decrypt error: {}, reset crypt setup",
                                     client_sync.authenticate.get_username(),
                                     err
                                 );
@@ -199,16 +222,6 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                                 }
                             }
                         }
-
-                        tracing::warn!("client decrypt error: {}", err);
-
-                        crate::metrics::MESSAGES_TOTAL
-                            .with_label_values(&["udp", "input", "VoicePacket"])
-                            .inc();
-
-                        crate::metrics::MESSAGES_BYTES
-                            .with_label_values(&["udp", "input", "VoicePacket"])
-                            .inc_by(size as u64);
 
                         continue;
                     }

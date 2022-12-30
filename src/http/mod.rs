@@ -1,5 +1,6 @@
 mod metrics;
 mod mute;
+mod status;
 
 use crate::ServerState;
 use actix_server::Server;
@@ -44,6 +45,7 @@ pub fn create_http_server(
             .service(metrics::get_metrics)
             .service(mute::get_mute)
             .service(mute::post_mute)
+            .service(status::get_status)
     });
 
     server = if use_tls {
