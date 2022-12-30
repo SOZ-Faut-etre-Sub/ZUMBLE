@@ -122,17 +122,20 @@ impl CryptState {
             // packet is late or repeated, or we lost a few packets in between
             let diff = nonce_0.wrapping_sub(self.decrypt_nonce as u8) as i8;
             self.decrypt_nonce = self.decrypt_nonce.wrapping_add(diff as u128);
+
             if diff > 0 {
                 lost = i32::from(diff - 1); // lost a few packets in between this and the last one
             } else if diff > -30 {
                 if self.decrypt_history[nonce_0 as usize] == (self.decrypt_nonce >> 8) as u8 {
                     self.decrypt_nonce = saved_nonce;
+
                     return Err(DecryptError::Repeat);
                 }
                 // just late
                 late = true;
                 lost = -1;
             } else {
+                self.decrypt_nonce = saved_nonce;
                 return Err(DecryptError::Late); // late by more than 30 packets
             }
         }
@@ -145,12 +148,13 @@ impl CryptState {
         }
 
         self.decrypt_history[nonce_0 as usize] = (self.decrypt_nonce >> 8) as u8;
-
         self.good += 1;
+
         if late {
             self.late += 1;
             self.decrypt_nonce = saved_nonce;
         }
+
         self.lost = (self.lost as i32 + lost as i32) as u32;
 
         decode_voice_packet(buf)
