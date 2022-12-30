@@ -125,6 +125,14 @@ pub async fn send_message<T: Message, S: AsyncWrite + Unpin>(kind: MessageKind, 
     stream.write_all(bytes.as_ref()).await?;
     stream.flush().await?;
 
+    crate::metrics::MESSAGES_TOTAL
+        .with_label_values(&["tcp", "output", kind.to_string().as_str()])
+        .inc();
+
+    crate::metrics::MESSAGES_BYTES
+        .with_label_values(&["tcp", "output", kind.to_string().as_str()])
+        .inc_by(bytes.len() as u64);
+
     Ok(())
 }
 
