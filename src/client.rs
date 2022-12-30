@@ -25,7 +25,7 @@ pub struct Client {
     pub deaf: bool,
     pub write: RwLock<WriteHalf<TlsStream<TcpStream>>>,
     pub tokens: Vec<String>,
-    pub crypt_state: RwLock<CryptState>,
+    pub crypt_state: Arc<RwLock<CryptState>>,
     pub udp_socket_addr: Option<SocketAddr>,
     pub use_opus: bool,
     pub codecs: Vec<i32>,
@@ -74,7 +74,7 @@ impl Client {
             version,
             session_id,
             channel_id,
-            crypt_state: RwLock::new(crypt_state),
+            crypt_state: Arc::new(RwLock::new(crypt_state)),
             write: RwLock::new(write),
             tokens,
             deaf: false,
@@ -123,6 +123,18 @@ impl Client {
             .inc_by(bytes.len() as u64);
 
         Ok(())
+    }
+
+    pub async fn send_crypt_setup(&self, reset: bool) -> Result<(), MumbleError> {
+        if reset {
+            {
+                self.crypt_state.write().await.reset();
+            }
+        }
+
+        let crypt_setup = { self.crypt_state.read().await.get_crypt_setup() };
+
+        self.send_message(MessageKind::CryptSetup, &crypt_setup).await
     }
 
     pub async fn send_my_user_state(&self) -> Result<(), MumbleError> {

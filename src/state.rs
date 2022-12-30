@@ -11,6 +11,7 @@ use protobuf::Message;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
@@ -320,30 +321,30 @@ impl ServerState {
 
     pub async fn find_client_for_packet(&self, bytes: &mut BytesMut) -> (Option<Arc<RwLock<Client>>>, Option<VoicePacket<Serverbound>>) {
         for c in self.clients.values() {
-            {
-                let client_read = c.read().await;
+            let crypt_state = { c.read().await.crypt_state.clone() };
+            let mut try_buf = bytes.clone();
+            let decrypt_result = { crypt_state.write().await.decrypt(&mut try_buf) };
 
-                if client_read.udp_socket_addr.is_some() {
-                    continue;
+            match decrypt_result {
+                Ok(p) => {
+                    return (Some(c.clone()), Some(p));
                 }
+                Err(err) => {
+                    let duration = { Instant::now().duration_since(crypt_state.read().await.last_good).as_millis() };
 
-                let mut crypt_state = client_read.crypt_state.write().await;
-                let mut try_buf = bytes.clone();
+                    // last good packet was more than 5sec ago, reset
+                    if duration > 5000 {
+                        let send_crypt_setup = { c.read().await.send_crypt_setup(true).await };
 
-                match crypt_state.decrypt(&mut try_buf) {
-                    Ok(p) => {
-                        return (Some(c.clone()), Some(p));
+                        if let Err(e) = send_crypt_setup {
+                            tracing::error!("failed to send crypt setup: {:?}", e);
+                        }
                     }
-                    Err(err) => {
-                        tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
 
-                        continue;
-                    }
+                    tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
                 }
             }
-        }
 
-        for c in self.clients.values() {
             {
                 let client_read = c.read().await;
 
@@ -356,6 +357,11 @@ impl ServerState {
                     }
                     Err(err) => {
                         tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
+
+                        // last good packet was more than 5sec ago, reset
+                        if Instant::now().duration_since(crypt_state.last_good).as_millis() > 5000 {
+                            crypt_state.reset();
+                        }
 
                         continue;
                     }

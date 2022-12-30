@@ -9,8 +9,10 @@ use actix_server::Server;
 use actix_service::fn_service;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io;
 use tokio::io::ReadHalf;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -132,6 +134,7 @@ pub async fn client_run(
 pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) {
     loop {
         let mut buffer = BytesMut::zeroed(1024);
+        let mut dead_clients = HashMap::new();
         let (size, addr) = socket.recv_from(&mut buffer).await.expect("cannot receive udp packet");
         buffer.resize(size, 0);
 
@@ -162,6 +165,16 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                 .inc_by(size as u64);
 
             continue;
+        }
+
+        // keep dead clients for 20 seconds
+        match dead_clients.get(&addr) {
+            Some(dead) => {
+                if Instant::now().duration_since(*dead).as_secs() < 20 {
+                    continue;
+                }
+            }
+            None => (),
         }
 
         let client_opt = { state.read().await.get_client_by_socket(&addr) };
@@ -199,28 +212,12 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                         };
 
                         if restart_crypt {
-                            let send_crypt_setup = {
-                                let client_sync = client.read().await;
+                            tracing::error!("client {} udp decrypt error: {}, reset crypt setup", username, err);
 
-                                tracing::error!(
-                                    "client {} udp decrypt error: {}, reset crypt setup",
-                                    client_sync.authenticate.get_username(),
-                                    err
-                                );
+                            let send_crypt_setup = { client.read().await.send_crypt_setup(true).await };
 
-                                {
-                                    client_sync.crypt_state.write().await.reset();
-                                }
-
-                                let crypt_setup = { client_sync.crypt_state.read().await.get_crypt_setup() };
-                                client_sync.send_message(MessageKind::CryptSetup, &crypt_setup).await
-                            };
-
-                            match send_crypt_setup {
-                                Ok(_) => (),
-                                Err(e) => {
-                                    tracing::error!("send crypt setup error: {}", e);
-                                }
+                            if let Err(e) = send_crypt_setup {
+                                tracing::error!("failed to send crypt setup: {:?}", e);
                             }
                         }
 
@@ -250,6 +247,8 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                     _ => {
                         tracing::error!("unknown client from address {}", addr);
 
+                        dead_clients.insert(addr, Instant::now());
+
                         crate::metrics::MESSAGES_TOTAL
                             .with_label_values(&["udp", "input", "VoicePacket"])
                             .inc();
@@ -263,6 +262,11 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                 }
             }
         };
+
+        // remove from dead clients if exists
+        if dead_clients.contains_key(&addr) {
+            dead_clients.remove(&addr);
+        }
 
         let session_id = { client.read().await.session_id };
         let client_packet = packet.to_client_bound(session_id);

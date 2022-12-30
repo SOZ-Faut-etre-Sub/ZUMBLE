@@ -6,6 +6,7 @@ use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use aes::Aes128;
 use ring::rand::{SecureRandom, SystemRandom};
+use std::time::Instant;
 
 lazy_static! {
     static ref SYSTEM_RANDOM: SystemRandom = SystemRandom::new();
@@ -26,6 +27,7 @@ pub struct CryptState {
     pub late: u32,
     pub lost: u32,
     pub resync: u32,
+    pub last_good: Instant,
 }
 
 impl Default for CryptState {
@@ -44,6 +46,7 @@ impl Default for CryptState {
             late: 0,
             lost: 0,
             resync: 0,
+            last_good: Instant::now(),
         }
     }
 }
@@ -57,6 +60,7 @@ impl CryptState {
         self.late = 0;
         self.lost = 0;
         self.resync = 0;
+        self.last_good = Instant::now();
     }
 
     /// Returns the nonce used for encrypting.
@@ -149,6 +153,7 @@ impl CryptState {
 
         self.decrypt_history[nonce_0 as usize] = (self.decrypt_nonce >> 8) as u8;
         self.good += 1;
+        self.last_good = Instant::now();
 
         if late {
             self.late += 1;
