@@ -3,6 +3,8 @@ use crate::handler::Handler;
 use bytes::{BufMut, Bytes, BytesMut};
 use protobuf::Message;
 use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub mod mumble;
@@ -126,18 +128,29 @@ pub async fn send_message<T: Message, S: AsyncWrite + Unpin>(kind: MessageKind, 
     Ok(())
 }
 
-pub async fn expected_message<T: Message + Handler, S: AsyncRead + Unpin>(kind: MessageKind, stream: &mut S) -> Result<T, MumbleError> {
-    let message_kind = stream.read_u16().await?;
+pub fn expected_message<T: Message + Handler, S: AsyncRead + Unpin>(
+    kind: MessageKind,
+    stream: &mut S,
+    retry: u8,
+) -> Pin<Box<dyn Future<Output = Result<T, MumbleError>> + '_>> {
+    Box::pin(async move {
+        let message_kind = stream.read_u16().await?;
 
-    if message_kind != kind as u16 {
-        let size = stream.read_u32().await?;
-        let mut data = vec![0; size as usize];
-        stream.read_exact(&mut data).await?;
+        if message_kind != kind as u16 {
+            let size = stream.read_u32().await?;
+            let mut data = vec![0; size as usize];
+            stream.read_exact(&mut data).await?;
 
-        return Err(MumbleError::UnexpectedMessageKind(message_kind));
-    }
+            // a udp tunnel message can come earlier than the expected message, so we retry and drop this message
+            if message_kind == MessageKind::UDPTunnel as u16 && retry < 10 {
+                return expected_message::<T, S>(kind, stream, retry + 1).await;
+            }
 
-    get_message(stream).await
+            return Err(MumbleError::UnexpectedMessageKind(message_kind));
+        }
+
+        get_message(stream).await
+    })
 }
 
 pub async fn get_message<T: Message + Handler, S: AsyncRead + Unpin>(stream: &mut S) -> Result<T, MumbleError> {

@@ -106,7 +106,7 @@ pub async fn client_run(
         let client_sync = client.read().await;
 
         client_sync.sync_client_and_channels(&state).await.map_err(|e| {
-            tracing::error!("init client error: {}", e);
+            tracing::error!("init client error during channel sync: {}", e);
 
             e
         })?;

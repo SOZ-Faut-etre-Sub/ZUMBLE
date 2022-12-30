@@ -39,13 +39,13 @@ impl Client {
         stream: &mut TlsStream<TcpStream>,
         server_version: Version,
     ) -> Result<(Version, Authenticate, CryptState), MumbleError> {
-        let version: Version = expected_message(MessageKind::Version, stream).await?;
+        let version: Version = expected_message(MessageKind::Version, stream, 0).await?;
 
         // Send version
         send_message(MessageKind::Version, &server_version, stream).await?;
 
         // Get authenticate
-        let authenticate: Authenticate = expected_message(MessageKind::Authenticate, stream).await?;
+        let authenticate: Authenticate = expected_message(MessageKind::Authenticate, stream, 0).await?;
 
         let crypt = CryptState::default();
         let crypt_setup = crypt.get_crypt_setup();
