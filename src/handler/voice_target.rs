@@ -31,19 +31,11 @@ impl Handler for VoiceTarget {
 
         for target_item in self.get_targets() {
             for session in target_item.get_session() {
-                {
-                    if state.read().await.clients.get(&session).is_some() {
-                        sessions.insert(*session);
-                    }
-                }
+                sessions.insert(*session);
             }
 
             if target_item.has_channel_id() {
-                {
-                    if state.read().await.channels.get(&target_item.get_channel_id()).is_some() {
-                        channels.insert(target_item.get_channel_id());
-                    }
-                }
+                channels.insert(target_item.get_channel_id());
             }
         }
 
