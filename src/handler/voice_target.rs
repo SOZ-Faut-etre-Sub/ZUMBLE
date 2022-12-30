@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 
 #[async_trait]
 impl Handler for VoiceTarget {
-    async fn handle(&self, state: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
+    async fn handle(&self, _: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
         if !self.has_id() {
             return Ok(());
         }
