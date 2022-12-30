@@ -17,7 +17,7 @@ impl Handler for UserState {
         }
 
         {
-            client.write().await.update(&self);
+            client.write().await.update(self);
         }
 
         if self.has_channel_id() {

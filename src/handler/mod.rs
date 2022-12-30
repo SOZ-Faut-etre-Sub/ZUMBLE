@@ -73,7 +73,7 @@ impl MessageHandler {
                 crate::metrics::MESSAGES_BYTES.with_label_values(&["tcp", "input", message_kind.to_string().as_str()]).inc_by(buf.len() as u64);
 
                 match message_kind {
-                    MessageKind::Version => return Self::try_handle::<mumble::Version>(&buf, state, client).await,
+                    MessageKind::Version => Self::try_handle::<mumble::Version>(&buf, state, client).await,
                     MessageKind::UDPTunnel => {
                         let mut bytes = BytesMut::from(buf.as_slice());
 
@@ -86,29 +86,29 @@ impl MessageHandler {
                             }
                         };
 
-                        let output_voice_packet = { voice_packet.to_client_bound(client.read().await.session_id) };
+                        let output_voice_packet = { voice_packet.into_client_bound(client.read().await.session_id) };
 
-                        return output_voice_packet.handle(state, client).await
+                        output_voice_packet.handle(state, client).await
                     }
-                    MessageKind::Authenticate => return Self::try_handle::<mumble::Authenticate>(&buf, state, client).await,
-                    MessageKind::Ping => return Self::try_handle::<mumble::Ping>(&buf, state, client).await,
-                    MessageKind::ChannelState => return Self::try_handle::<mumble::ChannelState>(&buf, state, client).await,
-                    MessageKind::CryptSetup => return Self::try_handle::<mumble::CryptSetup>(&buf, state, client).await,
-                    MessageKind::PermissionQuery => return Self::try_handle::<mumble::PermissionQuery>(&buf, state, client).await,
-                    MessageKind::UserState => return Self::try_handle::<mumble::UserState>(&buf, state, client).await,
-                    MessageKind::VoiceTarget => return Self::try_handle::<mumble::VoiceTarget>(&buf, state, client).await,
+                    MessageKind::Authenticate => Self::try_handle::<mumble::Authenticate>(&buf, state, client).await,
+                    MessageKind::Ping => Self::try_handle::<mumble::Ping>(&buf, state, client).await,
+                    MessageKind::ChannelState => Self::try_handle::<mumble::ChannelState>(&buf, state, client).await,
+                    MessageKind::CryptSetup => Self::try_handle::<mumble::CryptSetup>(&buf, state, client).await,
+                    MessageKind::PermissionQuery => Self::try_handle::<mumble::PermissionQuery>(&buf, state, client).await,
+                    MessageKind::UserState => Self::try_handle::<mumble::UserState>(&buf, state, client).await,
+                    MessageKind::VoiceTarget => Self::try_handle::<mumble::VoiceTarget>(&buf, state, client).await,
                     _ => {
                         tracing::warn!("unsupported message kind: {:?}", message_kind);
 
-                        return Ok(());
+                        Ok(())
                     }
                 }
             },
             packet = consumer.recv() => {
                 if let Some(packet) = packet {
-                    return packet.handle(state, client).await
+                    packet.handle(state, client).await
                 } else {
-                    return Ok(());
+                    Ok(())
                 }
             }
         }

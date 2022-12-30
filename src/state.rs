@@ -229,7 +229,7 @@ impl ServerState {
             Err(e) => tracing::error!("failed to send channel remove: {:?}", e),
         }
 
-        return Some(leave_channel_id);
+        Some(leave_channel_id)
     }
 
     pub async fn set_client_channel(&self, client: Arc<RwLock<Client>>, channel_id: u32) -> Result<Option<u32>, MumbleError> {

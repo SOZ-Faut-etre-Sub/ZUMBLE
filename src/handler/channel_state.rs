@@ -54,7 +54,7 @@ impl Handler for ChannelState {
 
             channel_state.get_channel_id()
         } else {
-            let channel = { state.write().await.add_channel(&self) };
+            let channel = { state.write().await.add_channel(self) };
             let channel_state = { channel.read().await.get_channel_state() };
 
             {

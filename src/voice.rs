@@ -15,7 +15,7 @@ use super::varint::BufMutExt;
 use super::varint::ReadExt;
 
 /// A packet transmitted via Mumble's voice channel.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VoicePacket<Dst: VoicePacketDst> {
     /// Ping packets contain opaque timestamp-like values which should simply be echoed back.
     Ping {
@@ -49,7 +49,7 @@ pub enum VoicePacket<Dst: VoicePacketDst> {
 }
 
 /// Audio data payload of [VoicePacket]s.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum VoicePacketPayload {
     /// CELT Alpha (0.7.0) encoded audio frames.
@@ -63,10 +63,10 @@ pub enum VoicePacketPayload {
 }
 
 /// Zero-sized struct indicating server-bound packet direction.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Serverbound;
 /// Zero-sized struct indicating client-bound packet direction.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Clientbound;
 
 /// Sealed trait for indicating voice packet direction.
@@ -104,7 +104,7 @@ impl VoicePacketDst for Clientbound {
 }
 
 impl VoicePacket<Serverbound> {
-    pub fn to_client_bound(self, session_id: u32) -> VoicePacket<Clientbound> {
+    pub fn into_client_bound(self, session_id: u32) -> VoicePacket<Clientbound> {
         match self {
             VoicePacket::Ping { timestamp } => VoicePacket::Ping { timestamp },
             VoicePacket::Audio {
@@ -240,7 +240,7 @@ pub fn encode_voice_packet<EncodeDst: VoicePacketDst>(item: &VoicePacket<EncodeD
                 }
             };
             if let Some(bytes) = position_info {
-                dst.extend_from_slice(&bytes);
+                dst.extend_from_slice(bytes);
             }
         }
     }

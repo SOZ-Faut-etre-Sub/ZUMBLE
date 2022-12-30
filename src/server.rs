@@ -168,13 +168,10 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
         }
 
         // keep dead clients for 20 seconds
-        match dead_clients.get(&addr) {
-            Some(dead) => {
-                if Instant::now().duration_since(*dead).as_secs() < 20 {
-                    continue;
-                }
+        if let Some(dead) = dead_clients.get(&addr) {
+            if Instant::now().duration_since(*dead).as_secs() < 20 {
+                continue;
             }
-            None => (),
         }
 
         let client_opt = { state.read().await.get_client_by_socket(&addr) };
@@ -201,11 +198,7 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                             DecryptError::Late => {
                                 let late = { client.read().await.crypt_state.read().await.late };
 
-                                if late > 100 {
-                                    true
-                                } else {
-                                    false
-                                }
+                                late > 100
                             }
                             DecryptError::Repeat => false,
                             _ => true,
@@ -269,7 +262,7 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
         }
 
         let session_id = { client.read().await.session_id };
-        let client_packet = packet.to_client_bound(session_id);
+        let client_packet = packet.into_client_bound(session_id);
 
         match &client_packet {
             VoicePacket::Ping { .. } => {

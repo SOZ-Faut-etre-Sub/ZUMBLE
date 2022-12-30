@@ -36,7 +36,7 @@ impl Default for CryptState {
         SYSTEM_RANDOM.fill(&mut key).expect("Failed to generate random key");
 
         Self {
-            aes: Aes128::new(&GenericArray::from_slice(&key)),
+            aes: Aes128::new(GenericArray::from_slice(&key)),
             key,
             encrypt_nonce: 0,
             decrypt_nonce: 1 << 127,
@@ -241,7 +241,7 @@ impl CryptState {
         let block = GenericArray::from_mut_slice(&mut data_bytes);
         self.aes.encrypt_block(block);
 
-        u128::from_be_bytes(data_bytes).try_into().unwrap()
+        u128::from_be_bytes(data_bytes)
     }
 
     /// AES-128 decryption primitive.
@@ -250,7 +250,7 @@ impl CryptState {
         let block = GenericArray::from_mut_slice(&mut data_bytes);
         self.aes.decrypt_block(block);
 
-        u128::from_be_bytes(data_bytes).try_into().unwrap()
+        u128::from_be_bytes(data_bytes)
     }
 }
 

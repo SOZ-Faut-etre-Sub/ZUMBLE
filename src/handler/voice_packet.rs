@@ -57,7 +57,7 @@ impl Handler for VoicePacket<Clientbound> {
                 // Loopback
                 31 => {
                     {
-                        client.write().await.send_voice_packet(&self).await?;
+                        client.write().await.send_voice_packet(self).await?;
                     }
 
                     return Ok(());
@@ -75,7 +75,7 @@ impl Handler for VoicePacket<Clientbound> {
                             return;
                         }
 
-                        let listening_client_result = { listening_client.write().await.send_voice_packet(&self).await };
+                        let listening_client_result = { listening_client.write().await.send_voice_packet(self).await };
 
                         match listening_client_result {
                             Ok(_) => (),
