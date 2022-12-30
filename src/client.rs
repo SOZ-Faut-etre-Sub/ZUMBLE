@@ -5,7 +5,7 @@ use crate::proto::{expected_message, message_to_bytes, send_message, MessageKind
 use crate::target::VoiceTarget;
 use crate::voice::{encode_voice_packet, Clientbound, VoicePacket};
 use crate::ServerState;
-use bytes::BytesMut;
+use bytes::{BufMut, BytesMut};
 use protobuf::Message;
 use std::net::SocketAddr;
 use std::ops::DerefMut;
@@ -193,15 +193,21 @@ impl Client {
             return Ok(());
         }
 
-        let mut stream_write = self.write.write().await;
         let mut data = BytesMut::new();
         encode_voice_packet(packet, &mut data);
 
         let bytes = data.freeze();
 
-        stream_write.write_u16(MessageKind::UDPTunnel as u16).await?;
-        stream_write.write_u32(bytes.len() as u32).await?;
-        stream_write.write_all(bytes.as_ref()).await?;
+        let mut buffer = BytesMut::new();
+        buffer.put_u16(MessageKind::UDPTunnel as u16);
+        buffer.put_u32(bytes.len() as u32);
+        buffer.put_slice(&bytes);
+
+        {
+            let mut stream = self.write.write().await;
+            stream.write_all(buffer.as_ref()).await?;
+            stream.flush().await?;
+        }
 
         crate::metrics::MESSAGES_TOTAL
             .with_label_values(&["tcp", "output", "VoicePacket"])
@@ -209,7 +215,7 @@ impl Client {
 
         crate::metrics::MESSAGES_BYTES
             .with_label_values(&["tcp", "output", "VoicePacket"])
-            .inc_by((bytes.len() + 6) as u64);
+            .inc_by(buffer.len() as u64);
 
         Ok(())
     }
