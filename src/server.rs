@@ -194,6 +194,7 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
                                     false
                                 }
                             }
+                            DecryptError::Repeat => false,
                             _ => true,
                         };
 
