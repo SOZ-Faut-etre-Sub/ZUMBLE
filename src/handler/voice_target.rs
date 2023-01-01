@@ -39,6 +39,13 @@ impl Handler for VoiceTarget {
             }
         }
 
+        tracing::info!(
+            "add to voice target {}:  sessions {:?}, channels {:?} ",
+            self.get_id() - 1,
+            sessions,
+            channels
+        );
+
         {
             target.write().await.sessions = sessions;
             target.write().await.channels = channels;

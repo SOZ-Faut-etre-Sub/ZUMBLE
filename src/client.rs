@@ -68,7 +68,7 @@ impl Client {
     ) -> Self {
         let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
         let mut targets = Vec::with_capacity(30);
-        targets.resize(30, Arc::new(RwLock::new(VoiceTarget::default())));
+        targets.resize_with(30, Default::default);
 
         Self {
             version,
