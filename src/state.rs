@@ -319,7 +319,16 @@ impl ServerState {
         self.clients_by_socket.get(socket_addr).cloned()
     }
 
-    pub async fn find_client_for_packet(&self, bytes: &mut BytesMut) -> (Option<Arc<RwLock<Client>>>, Option<VoicePacket<Serverbound>>) {
+    pub fn remove_client_by_socket(&mut self, socket_addr: &SocketAddr) {
+        self.clients_by_socket.remove(socket_addr);
+    }
+
+    pub async fn find_client_for_packet(
+        &self,
+        bytes: &mut BytesMut,
+    ) -> (Option<Arc<RwLock<Client>>>, Option<VoicePacket<Serverbound>>, Vec<SocketAddr>) {
+        let mut address_to_remove = Vec::new();
+
         for c in self.clients.values() {
             let crypt_state = { c.read().await.crypt_state.clone() };
             let mut try_buf = bytes.clone();
@@ -327,7 +336,7 @@ impl ServerState {
 
             match decrypt_result {
                 Ok(p) => {
-                    return (Some(c.clone()), Some(p));
+                    return (Some(c.clone()), Some(p), address_to_remove);
                 }
                 Err(err) => {
                     let duration = { Instant::now().duration_since(crypt_state.read().await.last_good).as_millis() };
@@ -339,37 +348,22 @@ impl ServerState {
                         if let Err(e) = send_crypt_setup {
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
+
+                        if let Some(address) = { c.read().await.udp_socket_addr } {
+                            address_to_remove.push(address);
+
+                            {
+                                c.write().await.udp_socket_addr = None
+                            };
+                        }
                     }
 
                     tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
                 }
             }
-
-            {
-                let client_read = c.read().await;
-
-                let mut crypt_state = client_read.crypt_state.write().await;
-                let mut try_buf = bytes.clone();
-
-                match crypt_state.decrypt(&mut try_buf) {
-                    Ok(p) => {
-                        return (Some(c.clone()), Some(p));
-                    }
-                    Err(err) => {
-                        tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
-
-                        // last good packet was more than 5sec ago, reset
-                        if Instant::now().duration_since(crypt_state.last_good).as_millis() > 5000 {
-                            crypt_state.reset();
-                        }
-
-                        continue;
-                    }
-                }
-            }
         }
 
-        (None, None)
+        (None, None, address_to_remove)
     }
 
     pub async fn disconnect(&mut self, client: Arc<RwLock<Client>>) {
