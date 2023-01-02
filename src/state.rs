@@ -94,6 +94,7 @@ impl ServerState {
         crypt_state: CryptState,
         write: WriteHalf<TlsStream<TcpStream>>,
         publisher: Sender<VoicePacket<Clientbound>>,
+        publisher_disconnect: Sender<bool>,
     ) -> Arc<RwLock<Client>> {
         let session_id = self.get_free_session_id();
 
@@ -106,6 +107,7 @@ impl ServerState {
             write,
             self.socket.clone(),
             publisher,
+            publisher_disconnect,
         )));
 
         self.clients.insert(session_id, client.clone());

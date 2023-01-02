@@ -57,15 +57,21 @@ pub fn create_tcp_server(
 
                         let (read, write) = io::split(stream);
                         let (tx, rx) = mpsc::channel(32);
+                        let (tx_disconnect, rx_disconnect) = mpsc::channel(32);
 
                         let username = authenticate.get_username().to_string();
-                        let client = { state.write().await.add_client(version, authenticate, crypt_state, write, tx) };
+                        let client = {
+                            state
+                                .write()
+                                .await
+                                .add_client(version, authenticate, crypt_state, write, tx, tx_disconnect)
+                        };
 
                         crate::metrics::CLIENTS_TOTAL.inc();
 
                         tracing::info!("new client {} connected", username);
 
-                        match client_run(read, rx, state.clone(), client.clone()).await {
+                        match client_run(read, rx, rx_disconnect, state.clone(), client.clone()).await {
                             Ok(_) => (),
                             Err(MumbleError::Io(err)) => {
                                 if err.kind() != io::ErrorKind::UnexpectedEof {
@@ -95,6 +101,7 @@ pub fn create_tcp_server(
 pub async fn client_run(
     mut read: ReadHalf<TlsStream<TcpStream>>,
     mut receiver: Receiver<VoicePacket<Clientbound>>,
+    mut receiver_disconnect: Receiver<bool>,
     state: Arc<RwLock<ServerState>>,
     client: Arc<RwLock<Client>>,
 ) -> Result<(), MumbleError> {
@@ -127,7 +134,7 @@ pub async fn client_run(
     }
 
     loop {
-        MessageHandler::handle(&mut read, &mut receiver, state.clone(), client.clone()).await?
+        MessageHandler::handle(&mut read, &mut receiver, &mut receiver_disconnect, state.clone(), client.clone()).await?
     }
 }
 

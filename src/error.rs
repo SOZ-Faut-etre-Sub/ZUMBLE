@@ -18,6 +18,9 @@ quick_error! {
         Decrypt(err: DecryptError) {
             from()
         }
+        ForceDisconnect {
+            display("force disconnecting client")
+        }
     }
 }
 

@@ -6,6 +6,7 @@ extern crate lazy_static;
 
 mod channel;
 mod check;
+mod clean;
 mod client;
 mod crypt;
 mod error;
@@ -15,6 +16,7 @@ mod metrics;
 mod proto;
 mod server;
 mod state;
+mod sync;
 mod target;
 mod varint;
 mod voice;

@@ -57,6 +57,7 @@ impl MessageHandler {
     pub async fn handle<S: AsyncRead + Unpin>(
         stream: &mut S,
         consumer: &mut Receiver<VoicePacket<Clientbound>>,
+        force_disconnect: &mut Receiver<bool>,
         state: Arc<RwLock<ServerState>>,
         client: Arc<RwLock<Client>>,
     ) -> Result<(), MumbleError> {
@@ -107,6 +108,13 @@ impl MessageHandler {
             packet = consumer.recv() => {
                 if let Some(packet) = packet {
                     packet.handle(state, client).await
+                } else {
+                    Ok(())
+                }
+            },
+            disconnect = force_disconnect.recv() => {
+                if let Some(true) = disconnect {
+                    Err(MumbleError::ForceDisconnect)
                 } else {
                     Ok(())
                 }

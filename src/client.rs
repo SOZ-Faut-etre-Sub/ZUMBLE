@@ -10,6 +10,7 @@ use protobuf::Message;
 use std::net::SocketAddr;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
@@ -31,7 +32,9 @@ pub struct Client {
     pub codecs: Vec<i32>,
     pub udp_socket: Arc<UdpSocket>,
     pub publisher: Sender<VoicePacket<Clientbound>>,
+    pub publisher_disconnect: Sender<bool>,
     pub targets: Vec<Arc<RwLock<VoiceTarget>>>,
+    pub last_ping: RwLock<Instant>,
 }
 
 impl Client {
@@ -65,6 +68,7 @@ impl Client {
         write: WriteHalf<TlsStream<TcpStream>>,
         udp_socket: Arc<UdpSocket>,
         publisher: Sender<VoicePacket<Clientbound>>,
+        publisher_disconnect: Sender<bool>,
     ) -> Self {
         let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
         let mut targets = Vec::with_capacity(30);
@@ -85,7 +89,9 @@ impl Client {
             authenticate,
             udp_socket,
             publisher,
+            publisher_disconnect,
             targets,
+            last_ping: RwLock::new(Instant::now()),
         }
     }
 
