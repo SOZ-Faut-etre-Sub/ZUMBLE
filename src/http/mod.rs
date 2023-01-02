@@ -38,10 +38,13 @@ pub fn create_http_server(
             }
         });
 
+        let mut logger = middleware::Logger::default();
+        logger = logger.exclude("/metrics").exclude("/status").log_target("log_http");
+
         App::new()
             .app_data(web::Data::new(state.clone()))
             .wrap(auth)
-            .wrap(middleware::Logger::default())
+            .wrap(logger)
             .service(metrics::get_metrics)
             .service(mute::get_mute)
             .service(mute::post_mute)

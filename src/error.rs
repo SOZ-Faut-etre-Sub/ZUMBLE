@@ -1,51 +1,33 @@
-use crate::proto::MessageKind;
+use thiserror::Error;
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum MumbleError {
-        UnsupportedMessageKind(kind: MessageKind) {
-            display("unsupported message kind: {:?}", kind)
-        }
-        UnexpectedMessageKind(kind: u16) {
-            display("unexpected message kind: {}", kind)
-        }
-        Io(err: tokio::io::Error) {
-            from()
-        }
-        Parse(err: protobuf::ProtobufError) {
-            from()
-        }
-        Decrypt(err: DecryptError) {
-            from()
-        }
-        ForceDisconnect {
-            display("force disconnecting client")
-        }
-        LockError(err: crate::sync::Error) {
-            from()
-        }
-    }
+#[derive(Error, Debug)]
+pub enum MumbleError {
+    #[error("unexpected message kind: {0}")]
+    UnexpectedMessageKind(u16),
+    #[error("tokio io error: {0}")]
+    Io(#[from] tokio::io::Error),
+    #[error("protobuf error: {0}")]
+    Parse(#[from] protobuf::ProtobufError),
+    #[error("voice decrypt error: {0}")]
+    Decrypt(#[from] DecryptError),
+    #[error("force disconnecting client")]
+    ForceDisconnect,
+    #[error("lock error: {0}")]
+    LockError(#[from] crate::sync::Error),
 }
 
 impl actix_web::error::ResponseError for MumbleError {}
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum DecryptError {
-        Io (err: tokio::io::Error) {
-            from()
-        }
-        Eof {
-            display("unexpected eof")
-        }
-        Repeat {
-            display("repeat")
-        }
-        Late {
-            display("late")
-        }
-        Mac {
-            display("mac")
-        }
-    }
+#[derive(Error, Debug)]
+pub enum DecryptError {
+    #[error("tokio io error: {0}")]
+    Io(#[from] tokio::io::Error),
+    #[error("unexpected eof")]
+    Eof,
+    #[error("repeat error")]
+    Repeat,
+    #[error("late error")]
+    Late,
+    #[error("mac error")]
+    Mac,
 }

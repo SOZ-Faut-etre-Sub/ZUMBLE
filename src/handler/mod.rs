@@ -15,6 +15,7 @@ use crate::proto::MessageKind;
 use crate::sync::RwLock;
 use crate::voice::{decode_voice_packet, Clientbound, Serverbound, VoicePacket};
 use crate::ServerState;
+use anyhow::Context;
 use async_trait::async_trait;
 use bytes::BytesMut;
 use protobuf::Message;
@@ -60,7 +61,7 @@ impl MessageHandler {
         force_disconnect: &mut Receiver<bool>,
         state: Arc<RwLock<ServerState>>,
         client: Arc<RwLock<Client>>,
-    ) -> Result<(), MumbleError> {
+    ) -> Result<(), anyhow::Error> {
         tokio::select! {
             kind_read = stream.read_u16() => {
                 let kind = kind_read?;
@@ -74,7 +75,7 @@ impl MessageHandler {
                 crate::metrics::MESSAGES_BYTES.with_label_values(&["tcp", "input", message_kind.to_string().as_str()]).inc_by(buf.len() as u64);
 
                 match message_kind {
-                    MessageKind::Version => Self::try_handle::<mumble::Version>(&buf, state, client).await,
+                    MessageKind::Version => Self::try_handle::<mumble::Version>(&buf, state, client).await.context("kind: Version"),
                     MessageKind::UDPTunnel => {
                         let mut bytes = BytesMut::from(buf.as_slice());
 
@@ -89,15 +90,15 @@ impl MessageHandler {
 
                         let output_voice_packet = { voice_packet.into_client_bound(client.read_err().await?.session_id) };
 
-                        output_voice_packet.handle(state, client).await
+                        output_voice_packet.handle(state, client).await.context("kind: UDPTunnel")
                     }
-                    MessageKind::Authenticate => Self::try_handle::<mumble::Authenticate>(&buf, state, client).await,
-                    MessageKind::Ping => Self::try_handle::<mumble::Ping>(&buf, state, client).await,
-                    MessageKind::ChannelState => Self::try_handle::<mumble::ChannelState>(&buf, state, client).await,
-                    MessageKind::CryptSetup => Self::try_handle::<mumble::CryptSetup>(&buf, state, client).await,
-                    MessageKind::PermissionQuery => Self::try_handle::<mumble::PermissionQuery>(&buf, state, client).await,
-                    MessageKind::UserState => Self::try_handle::<mumble::UserState>(&buf, state, client).await,
-                    MessageKind::VoiceTarget => Self::try_handle::<mumble::VoiceTarget>(&buf, state, client).await,
+                    MessageKind::Authenticate => Self::try_handle::<mumble::Authenticate>(&buf, state, client).await.context("kind: Authenticate"),
+                    MessageKind::Ping => Self::try_handle::<mumble::Ping>(&buf, state, client).await.context("kind: Ping =>"),
+                    MessageKind::ChannelState => Self::try_handle::<mumble::ChannelState>(&buf, state, client).await.context("kind: ChannelState"),
+                    MessageKind::CryptSetup => Self::try_handle::<mumble::CryptSetup>(&buf, state, client).await.context("kind: CryptSetup"),
+                    MessageKind::PermissionQuery => Self::try_handle::<mumble::PermissionQuery>(&buf, state, client).await.context("kind: PermissionQuery"),
+                    MessageKind::UserState => Self::try_handle::<mumble::UserState>(&buf, state, client).await.context("kind: UserState"),
+                    MessageKind::VoiceTarget => Self::try_handle::<mumble::VoiceTarget>(&buf, state, client).await.context("kind: VoiceTarget"),
                     _ => {
                         tracing::warn!("unsupported message kind: {:?}", message_kind);
 
@@ -107,14 +108,14 @@ impl MessageHandler {
             },
             packet = consumer.recv() => {
                 if let Some(packet) = packet {
-                    packet.handle(state, client).await
+                    packet.handle(state, client).await.context("handle voice packet")
                 } else {
                     Ok(())
                 }
             },
             disconnect = force_disconnect.recv() => {
                 if let Some(true) = disconnect {
-                    Err(MumbleError::ForceDisconnect)
+                    Err(MumbleError::ForceDisconnect).context("force disconnect")
                 } else {
                     Ok(())
                 }

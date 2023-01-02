@@ -1,5 +1,5 @@
 use crate::client::Client;
-use crate::error::{DecryptError, MumbleError};
+use crate::error::DecryptError;
 use crate::handler::MessageHandler;
 use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
@@ -8,6 +8,7 @@ use crate::voice::{Clientbound, VoicePacket};
 use crate::ServerState;
 use actix_server::Server;
 use actix_service::fn_service;
+use anyhow::Context;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
 use std::collections::HashMap;
@@ -62,10 +63,14 @@ pub fn create_tcp_server(
 
                         let username = authenticate.get_username().to_string();
                         let client = {
-                            state
-                                .write_err()
-                                .await?
-                                .add_client(version, authenticate, crypt_state, write, tx, tx_disconnect)
+                            state.write_err().await.context("failed to add client")?.add_client(
+                                version,
+                                authenticate,
+                                crypt_state,
+                                write,
+                                tx,
+                                tx_disconnect,
+                            )
                         };
 
                         crate::metrics::CLIENTS_TOTAL.inc();
@@ -74,23 +79,18 @@ pub fn create_tcp_server(
 
                         match client_run(read, rx, rx_disconnect, state.clone(), client.clone()).await {
                             Ok(_) => (),
-                            Err(MumbleError::Io(err)) => {
-                                if err.kind() != io::ErrorKind::UnexpectedEof {
-                                    tracing::error!("client {} error: {}", username, err);
-                                }
-                            }
                             Err(e) => tracing::error!("client {} error: {}", username, e),
                         }
 
                         tracing::info!("client {} disconnected", username);
 
                         {
-                            state.write_err().await?.disconnect(client).await?;
+                            state.write_err().await.context("disconnect user")?.disconnect(client).await?;
                         }
 
                         crate::metrics::CLIENTS_TOTAL.dec();
 
-                        Ok::<(), MumbleError>(())
+                        Ok::<(), anyhow::Error>(())
                     }
                 })
             },
@@ -105,7 +105,7 @@ pub async fn client_run(
     mut receiver_disconnect: Receiver<bool>,
     state: Arc<RwLock<ServerState>>,
     client: Arc<RwLock<Client>>,
-) -> Result<(), MumbleError> {
+) -> Result<(), anyhow::Error> {
     if let Some(codec_version) = { state.read_err().await?.check_codec().await? } {
         {
             client
@@ -152,7 +152,7 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
     }
 }
 
-async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
+async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) -> Result<(), anyhow::Error> {
     let mut buffer = BytesMut::zeroed(1024);
     let mut dead_clients = HashMap::new();
     let (size, addr) = socket.recv_from(&mut buffer).await?;
@@ -195,7 +195,16 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
 
     let (client, packet) = match client_opt {
         Some(client) => {
-            let decrypt_result = { client.read_err().await?.crypt_state.write_err().await?.decrypt(&mut buffer) };
+            let decrypt_result = {
+                client
+                    .read_err()
+                    .await?
+                    .crypt_state
+                    .write_err()
+                    .await
+                    .context("decrypt voice packet")?
+                    .decrypt(&mut buffer)
+            };
 
             match decrypt_result {
                 Ok(p) => (client, p),
@@ -233,11 +242,15 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
                         // Remove socket address from client
                         if let Some(address) = { client.read_err().await?.udp_socket_addr } {
                             {
-                                state.write_err().await?.remove_client_by_socket(&address)
+                                state
+                                    .write_err()
+                                    .await
+                                    .context("remove client by socket")?
+                                    .remove_client_by_socket(&address)
                             };
 
                             {
-                                client.write_err().await?.udp_socket_addr = None;
+                                client.write_err().await.context("set udp socket to null")?.udp_socket_addr = None;
                             };
                         }
                     }
@@ -251,7 +264,11 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
 
             for address in address_to_remove {
                 {
-                    state.write_err().await?.remove_client_by_socket(&address)
+                    state
+                        .write_err()
+                        .await
+                        .context("remove client by socket when searching for one")?
+                        .remove_client_by_socket(&address)
                 };
             }
 
@@ -266,7 +283,12 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
                     }
 
                     {
-                        state.write_err().await?.set_client_socket(client.clone(), addr).await?;
+                        state
+                            .write_err()
+                            .await
+                            .context("set client socket")?
+                            .set_client_socket(client.clone(), addr)
+                            .await?;
                     }
 
                     (client, packet)
@@ -316,7 +338,8 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
                     .await?
                     .crypt_state
                     .write_err()
-                    .await?
+                    .await
+                    .context("encrypt voice packet")?
                     .encrypt(&client_packet, &mut dest);
             }
 

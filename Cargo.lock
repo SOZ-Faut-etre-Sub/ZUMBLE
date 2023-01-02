@@ -270,6 +270,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.68"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cb2f989d18dd141ab8ae82f64d1a8cdd37e0840f73a406896cf5e99502fab61"
+
+[[package]]
 name = "async-trait"
 version = "0.1.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1065,12 +1071,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
-name = "quick-error"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
-
-[[package]]
 name = "quote"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1827,6 +1827,7 @@ dependencies = [
  "actix-web-codegen",
  "actix-web-httpauth",
  "aes",
+ "anyhow",
  "async-trait",
  "block-modes",
  "byteorder",
@@ -1837,12 +1838,12 @@ dependencies = [
  "lazy_static",
  "prometheus",
  "protobuf",
- "quick-error",
  "ring",
  "rustls",
  "rustls-pemfile",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "tokio-byteorder",
  "tokio-rustls",

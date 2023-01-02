@@ -29,6 +29,6 @@ impl Handler for Ping {
             ping.set_resync(crypt_state_read.resync);
         }
 
-        client.write_err().await?.send_message(MessageKind::Ping, &ping).await
+        client.read_err().await?.send_message(MessageKind::Ping, &ping).await
     }
 }

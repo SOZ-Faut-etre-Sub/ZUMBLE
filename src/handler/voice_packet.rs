@@ -57,7 +57,7 @@ impl Handler for VoicePacket<Clientbound> {
                 // Loopback
                 31 => {
                     {
-                        client.write_err().await?.send_voice_packet(self).await?;
+                        client.read_err().await?.send_voice_packet(self).await?;
                     }
 
                     return Ok(());

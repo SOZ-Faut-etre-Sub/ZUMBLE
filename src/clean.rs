@@ -6,7 +6,7 @@ use std::time::Instant;
 
 pub async fn clean_loop(state: Arc<RwLock<ServerState>>) {
     loop {
-        tracing::info!("cleaning clients");
+        tracing::trace!("cleaning clients");
 
         match clean_run(state.clone()).await {
             Ok(_) => (),
