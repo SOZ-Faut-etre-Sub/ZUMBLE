@@ -4,6 +4,7 @@ use crate::crypt::CryptState;
 use crate::error::MumbleError;
 use crate::proto::mumble::{Authenticate, ChannelRemove, ChannelState, CodecVersion, UserRemove, Version};
 use crate::proto::{message_to_bytes, MessageKind};
+use crate::sync::RwLock;
 use crate::voice::{Clientbound, Serverbound, VoicePacket};
 use bytes::BytesMut;
 use futures_util::StreamExt;
@@ -15,7 +16,6 @@ use std::time::Instant;
 use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
-use tokio::sync::RwLock;
 use tokio_rustls::server::TlsStream;
 
 pub struct CodecState {
@@ -130,23 +130,23 @@ impl ServerState {
         channel
     }
 
-    pub async fn get_client_by_name(&self, name: &str) -> Option<Arc<RwLock<Client>>> {
+    pub async fn get_client_by_name(&self, name: &str) -> Result<Option<Arc<RwLock<Client>>>, MumbleError> {
         for client in self.clients.values() {
             {
-                let client_read = client.read().await;
+                let client_read = client.read_err().await?;
 
                 if client_read.authenticate.get_username() == name {
-                    return Some(client.clone());
+                    return Ok(Some(client.clone()));
                 }
             }
         }
 
-        None
+        Ok(None)
     }
 
-    pub async fn set_client_socket(&mut self, client: Arc<RwLock<Client>>, addr: SocketAddr) {
+    pub async fn set_client_socket(&mut self, client: Arc<RwLock<Client>>, addr: SocketAddr) -> Result<(), MumbleError> {
         {
-            let client_read = client.read().await;
+            let client_read = client.read_err().await?;
 
             if let Some(exiting_addr) = client_read.udp_socket_addr {
                 self.clients_by_socket.remove(&exiting_addr);
@@ -154,10 +154,12 @@ impl ServerState {
         }
 
         {
-            client.write().await.udp_socket_addr = Some(addr);
+            client.write_err().await?.udp_socket_addr = Some(addr);
         }
 
         self.clients_by_socket.insert(addr, client);
+
+        Ok(())
     }
 
     pub async fn broadcast_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
@@ -169,9 +171,14 @@ impl ServerState {
         futures_util::stream::iter(self.clients.values())
             .for_each_concurrent(None, |client| async move {
                 {
-                    match client.clone().write().await.send(cursor).await {
-                        Ok(_) => (),
-                        Err(e) => tracing::error!("failed to send message: {:?}", e),
+                    match client.clone().read_err().await {
+                        Ok(client_read) => match client_read.send(cursor).await {
+                            Ok(_) => (),
+                            Err(e) => tracing::error!("failed to send message: {:?}", e),
+                        },
+                        Err(err) => {
+                            tracing::error!("failed to read client: {}", err);
+                        }
                     }
                 }
             })
@@ -180,30 +187,30 @@ impl ServerState {
         Ok(())
     }
 
-    async fn check_leave_channel(&self, leave_channel_id: u32) -> Option<u32> {
+    async fn check_leave_channel(&self, leave_channel_id: u32) -> Result<Option<u32>, MumbleError> {
         for client in self.clients.values() {
             {
-                let client = client.read().await;
+                let client = client.read_err().await?;
 
                 if client.channel_id == leave_channel_id {
-                    return None;
+                    return Ok(None);
                 }
             }
         }
 
         for channel in self.channels.values() {
             {
-                let channel = channel.read().await;
+                let channel = channel.read_err().await?;
 
                 if channel.parent_id == Some(leave_channel_id) {
-                    return None;
+                    return Ok(None);
                 }
             }
         }
 
         if let Some(channel) = self.channels.get(&leave_channel_id) {
             {
-                let channel = channel.read().await;
+                let channel = channel.read_err().await?;
 
                 if channel.temporary {
                     // Broadcast channel remove
@@ -215,11 +222,11 @@ impl ServerState {
                         Err(e) => tracing::error!("failed to send channel remove: {:?}", e),
                     }
 
-                    return Some(leave_channel_id);
+                    return Ok(Some(leave_channel_id));
                 }
             }
 
-            return None;
+            return Ok(None);
         }
 
         // Broadcast channel remove
@@ -231,49 +238,49 @@ impl ServerState {
             Err(e) => tracing::error!("failed to send channel remove: {:?}", e),
         }
 
-        Some(leave_channel_id)
+        Ok(Some(leave_channel_id))
     }
 
     pub async fn set_client_channel(&self, client: Arc<RwLock<Client>>, channel_id: u32) -> Result<Option<u32>, MumbleError> {
-        let leave_channel_id = { client.write().await.join_channel(channel_id) };
+        let leave_channel_id = { client.write_err().await?.join_channel(channel_id) };
 
         if let Some(leave_channel_id) = leave_channel_id {
             // Broadcast new user state
-            let user_state = { client.read().await.get_user_state() };
+            let user_state = { client.read_err().await?.get_user_state() };
 
             match self.broadcast_message(MessageKind::UserState, &user_state).await {
                 Ok(_) => (),
                 Err(e) => tracing::error!("failed to send user state: {:?}", e),
             }
 
-            return Ok(self.check_leave_channel(leave_channel_id).await);
+            return Ok(self.check_leave_channel(leave_channel_id).await?);
         }
 
         Ok(None)
     }
 
-    pub async fn get_channel_by_name(&self, name: &str) -> Option<Arc<RwLock<Channel>>> {
+    pub async fn get_channel_by_name(&self, name: &str) -> Result<Option<Arc<RwLock<Channel>>>, MumbleError> {
         for channel in self.channels.values() {
             {
-                let channel_read = channel.read().await;
+                let channel_read = channel.read_err().await?;
 
                 if channel_read.name == name {
-                    return Some(channel.clone());
+                    return Ok(Some(channel.clone()));
                 }
             }
         }
 
-        None
+        Ok(None)
     }
 
-    pub async fn check_codec(&self) -> Option<CodecVersion> {
-        let current_version = { self.codec_state.read().await.get_version() };
+    pub async fn check_codec(&self) -> Result<Option<CodecVersion>, MumbleError> {
+        let current_version = { self.codec_state.read_err().await?.get_version() };
         let mut new_version = current_version;
         let mut versions = HashMap::new();
 
         for client in self.clients.values() {
             {
-                let client = client.read().await;
+                let client = client.read_err().await?;
 
                 for version in &client.codecs {
                     *versions.entry(*version).or_insert(0) += 1;
@@ -291,11 +298,11 @@ impl ServerState {
         }
 
         if new_version == current_version {
-            return Some(self.codec_state.read().await.get_codec_version());
+            return Ok(Some(self.codec_state.read_err().await?.get_codec_version()));
         }
 
         let codec_version = {
-            let mut codec_state = self.codec_state.write().await;
+            let mut codec_state = self.codec_state.write_err().await?;
             codec_state.prefer_alpha = !codec_state.prefer_alpha;
 
             if codec_state.prefer_alpha {
@@ -314,7 +321,7 @@ impl ServerState {
             }
         }
 
-        None
+        Ok(None)
     }
 
     pub fn get_client_by_socket(&self, socket_addr: &SocketAddr) -> Option<Arc<RwLock<Client>>> {
@@ -328,34 +335,34 @@ impl ServerState {
     pub async fn find_client_for_packet(
         &self,
         bytes: &mut BytesMut,
-    ) -> (Option<Arc<RwLock<Client>>>, Option<VoicePacket<Serverbound>>, Vec<SocketAddr>) {
+    ) -> Result<(Option<Arc<RwLock<Client>>>, Option<VoicePacket<Serverbound>>, Vec<SocketAddr>), MumbleError> {
         let mut address_to_remove = Vec::new();
 
         for c in self.clients.values() {
-            let crypt_state = { c.read().await.crypt_state.clone() };
+            let crypt_state = { c.read_err().await?.crypt_state.clone() };
             let mut try_buf = bytes.clone();
-            let decrypt_result = { crypt_state.write().await.decrypt(&mut try_buf) };
+            let decrypt_result = { crypt_state.write_err().await?.decrypt(&mut try_buf) };
 
             match decrypt_result {
                 Ok(p) => {
-                    return (Some(c.clone()), Some(p), address_to_remove);
+                    return Ok((Some(c.clone()), Some(p), address_to_remove));
                 }
                 Err(err) => {
-                    let duration = { Instant::now().duration_since(crypt_state.read().await.last_good).as_millis() };
+                    let duration = { Instant::now().duration_since(crypt_state.read_err().await?.last_good).as_millis() };
 
                     // last good packet was more than 5sec ago, reset
                     if duration > 5000 {
-                        let send_crypt_setup = { c.read().await.send_crypt_setup(true).await };
+                        let send_crypt_setup = { c.read_err().await?.send_crypt_setup(true).await };
 
                         if let Err(e) = send_crypt_setup {
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
 
-                        if let Some(address) = { c.read().await.udp_socket_addr } {
+                        if let Some(address) = { c.read_err().await?.udp_socket_addr } {
                             address_to_remove.push(address);
 
                             {
-                                c.write().await.udp_socket_addr = None
+                                c.write_err().await?.udp_socket_addr = None
                             };
                         }
                     }
@@ -365,33 +372,33 @@ impl ServerState {
             }
         }
 
-        (None, None, address_to_remove)
+        Ok((None, None, address_to_remove))
     }
 
-    pub async fn disconnect(&mut self, client: Arc<RwLock<Client>>) {
-        let client_id = { client.read().await.session_id };
+    pub async fn disconnect(&mut self, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
+        let client_id = { client.read_err().await?.session_id };
 
         self.clients.remove(&client_id);
 
         {
-            if let Some(socket_addr) = client.read().await.udp_socket_addr {
+            if let Some(socket_addr) = client.read_err().await?.udp_socket_addr {
                 self.clients_by_socket.remove(&socket_addr);
             }
         }
 
         for channel in self.channels.values() {
             {
-                channel.write().await.listeners.remove(&client_id);
+                channel.write_err().await?.listeners.remove(&client_id);
             }
         }
 
         for client in self.clients.values() {
             {
-                let client_read = client.read().await;
+                let client_read = client.read_err().await?;
 
                 for target in &client_read.targets {
                     {
-                        target.write().await.sessions.remove(&client_id);
+                        target.write_err().await?.sessions.remove(&client_id);
                     }
                 }
             }
@@ -403,9 +410,11 @@ impl ServerState {
 
         self.broadcast_message(MessageKind::UserRemove, &remove).await.unwrap();
 
-        let channel_id = { client.read().await.channel_id };
+        let channel_id = { client.read_err().await?.channel_id };
 
-        self.check_leave_channel(channel_id).await;
+        self.check_leave_channel(channel_id).await?;
+
+        Ok(())
     }
 
     fn get_free_session_id(&self) -> u32 {

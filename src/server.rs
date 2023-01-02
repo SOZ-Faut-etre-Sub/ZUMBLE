@@ -3,6 +3,7 @@ use crate::error::{DecryptError, MumbleError};
 use crate::handler::MessageHandler;
 use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
+use crate::sync::RwLock;
 use crate::voice::{Clientbound, VoicePacket};
 use crate::ServerState;
 use actix_server::Server;
@@ -16,8 +17,8 @@ use std::time::Instant;
 use tokio::io;
 use tokio::io::ReadHalf;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::{mpsc, RwLock};
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
 
 pub fn create_tcp_server(
@@ -62,8 +63,8 @@ pub fn create_tcp_server(
                         let username = authenticate.get_username().to_string();
                         let client = {
                             state
-                                .write()
-                                .await
+                                .write_err()
+                                .await?
                                 .add_client(version, authenticate, crypt_state, write, tx, tx_disconnect)
                         };
 
@@ -84,7 +85,7 @@ pub fn create_tcp_server(
                         tracing::info!("client {} disconnected", username);
 
                         {
-                            state.write().await.disconnect(client).await;
+                            state.write_err().await?.disconnect(client).await?;
                         }
 
                         crate::metrics::CLIENTS_TOTAL.dec();
@@ -105,14 +106,18 @@ pub async fn client_run(
     state: Arc<RwLock<ServerState>>,
     client: Arc<RwLock<Client>>,
 ) -> Result<(), MumbleError> {
-    if let Some(codec_version) = { state.read().await.check_codec().await } {
+    if let Some(codec_version) = { state.read_err().await?.check_codec().await? } {
         {
-            client.read().await.send_message(MessageKind::CodecVersion, &codec_version).await?;
+            client
+                .read_err()
+                .await?
+                .send_message(MessageKind::CodecVersion, &codec_version)
+                .await?;
         }
     }
 
     {
-        let client_sync = client.read().await;
+        let client_sync = client.read_err().await?;
 
         client_sync.sync_client_and_channels(&state).await.map_err(|e| {
             tracing::error!("init client error during channel sync: {}", e);
@@ -124,10 +129,10 @@ pub async fn client_run(
         client_sync.send_server_config().await?;
     }
 
-    let user_state = { client.read().await.get_user_state() };
+    let user_state = { client.read_err().await?.get_user_state() };
 
     {
-        match state.read().await.broadcast_message(MessageKind::UserState, &user_state).await {
+        match state.read_err().await?.broadcast_message(MessageKind::UserState, &user_state).await {
             Ok(_) => (),
             Err(e) => tracing::error!("failed to send user state: {:?}", e),
         }
@@ -140,205 +145,217 @@ pub async fn client_run(
 
 pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) {
     loop {
-        let mut buffer = BytesMut::zeroed(1024);
-        let mut dead_clients = HashMap::new();
-        let (size, addr) = socket.recv_from(&mut buffer).await.expect("cannot receive udp packet");
-        buffer.resize(size, 0);
+        match udp_server_run(protocol_version, socket.clone(), state.clone()).await {
+            Ok(_) => (),
+            Err(e) => tracing::error!("udp server error: {}", e),
+        }
+    }
+}
 
-        let mut cursor = Cursor::new(&buffer[..size]);
-        let kind = cursor.read_u32::<byteorder::BigEndian>().unwrap();
+async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
+    let mut buffer = BytesMut::zeroed(1024);
+    let mut dead_clients = HashMap::new();
+    let (size, addr) = socket.recv_from(&mut buffer).await?;
+    buffer.resize(size, 0);
 
-        if size == 12 && kind == 0 {
-            let timestamp = cursor.read_u64::<byteorder::LittleEndian>().unwrap();
+    let mut cursor = Cursor::new(&buffer[..size]);
+    let kind = cursor.read_u32::<byteorder::BigEndian>().unwrap();
 
-            let mut send = Cursor::new(vec![0u8; 24]);
-            send.write_u32::<byteorder::BigEndian>(protocol_version).unwrap();
-            send.write_u64::<byteorder::LittleEndian>(timestamp).unwrap();
-            send.write_u32::<byteorder::BigEndian>(0).unwrap();
-            send.write_u32::<byteorder::BigEndian>(250).unwrap();
-            send.write_u32::<byteorder::BigEndian>(72000).unwrap();
+    if size == 12 && kind == 0 {
+        let timestamp = cursor.read_u64::<byteorder::LittleEndian>().unwrap();
 
-            socket
-                .send_to(send.get_ref().as_slice(), addr)
-                .await
-                .expect("cannot send udp packet");
+        let mut send = Cursor::new(vec![0u8; 24]);
+        send.write_u32::<byteorder::BigEndian>(protocol_version).unwrap();
+        send.write_u64::<byteorder::LittleEndian>(timestamp).unwrap();
+        send.write_u32::<byteorder::BigEndian>(0).unwrap();
+        send.write_u32::<byteorder::BigEndian>(250).unwrap();
+        send.write_u32::<byteorder::BigEndian>(72000).unwrap();
 
+        socket.send_to(send.get_ref().as_slice(), addr).await?;
+
+        crate::metrics::MESSAGES_TOTAL
+            .with_label_values(&["udp", "input", "PingAnonymous"])
+            .inc();
+
+        crate::metrics::MESSAGES_BYTES
+            .with_label_values(&["udp", "input", "PingAnonymous"])
+            .inc_by(size as u64);
+
+        return Ok(());
+    }
+
+    // keep dead clients for 20 seconds
+    if let Some(dead) = dead_clients.get(&addr) {
+        if Instant::now().duration_since(*dead).as_secs() < 20 {
+            return Ok(());
+        }
+    }
+
+    let client_opt = { state.read_err().await?.get_client_by_socket(&addr) };
+
+    let (client, packet) = match client_opt {
+        Some(client) => {
+            let decrypt_result = { client.read_err().await?.crypt_state.write_err().await?.decrypt(&mut buffer) };
+
+            match decrypt_result {
+                Ok(p) => (client, p),
+                Err(err) => {
+                    let username = { client.read_err().await?.authenticate.get_username().to_string() };
+                    tracing::warn!("client {} decrypt error: {}", username, err);
+
+                    crate::metrics::MESSAGES_TOTAL
+                        .with_label_values(&["udp", "input", "VoicePacket"])
+                        .inc();
+
+                    crate::metrics::MESSAGES_BYTES
+                        .with_label_values(&["udp", "input", "VoicePacket"])
+                        .inc_by(size as u64);
+
+                    let restart_crypt = match err {
+                        DecryptError::Late => {
+                            let late = { client.read_err().await?.crypt_state.read_err().await?.late };
+
+                            late > 100
+                        }
+                        DecryptError::Repeat => false,
+                        _ => true,
+                    };
+
+                    if restart_crypt {
+                        tracing::error!("client {} udp decrypt error: {}, reset crypt setup", username, err);
+
+                        let send_crypt_setup = { client.read_err().await?.send_crypt_setup(true).await };
+
+                        if let Err(e) = send_crypt_setup {
+                            tracing::error!("failed to send crypt setup: {:?}", e);
+                        }
+
+                        // Remove socket address from client
+                        if let Some(address) = { client.read_err().await?.udp_socket_addr } {
+                            {
+                                state.write_err().await?.remove_client_by_socket(&address)
+                            };
+
+                            {
+                                client.write_err().await?.udp_socket_addr = None;
+                            };
+                        }
+                    }
+
+                    return Ok(());
+                }
+            }
+        }
+        None => {
+            let (client_opt, packet_opt, address_to_remove) = { state.read_err().await?.find_client_for_packet(&mut buffer).await? };
+
+            for address in address_to_remove {
+                {
+                    state.write_err().await?.remove_client_by_socket(&address)
+                };
+            }
+
+            match (client_opt, packet_opt) {
+                (Some(client), Some(packet)) => {
+                    {
+                        tracing::info!(
+                            "UPD connected client {} on {}",
+                            client.read_err().await?.authenticate.get_username(),
+                            addr
+                        );
+                    }
+
+                    {
+                        state.write_err().await?.set_client_socket(client.clone(), addr).await?;
+                    }
+
+                    (client, packet)
+                }
+                _ => {
+                    tracing::error!("unknown client from address {}", addr);
+
+                    dead_clients.insert(addr, Instant::now());
+
+                    crate::metrics::MESSAGES_TOTAL
+                        .with_label_values(&["udp", "input", "VoicePacket"])
+                        .inc();
+
+                    crate::metrics::MESSAGES_BYTES
+                        .with_label_values(&["udp", "input", "VoicePacket"])
+                        .inc_by(size as u64);
+
+                    return Ok(());
+                }
+            }
+        }
+    };
+
+    // remove from dead clients if exists
+    if dead_clients.contains_key(&addr) {
+        dead_clients.remove(&addr);
+    }
+
+    let session_id = { client.read_err().await?.session_id };
+    let client_packet = packet.into_client_bound(session_id);
+
+    match &client_packet {
+        VoicePacket::Ping { .. } => {
             crate::metrics::MESSAGES_TOTAL
-                .with_label_values(&["udp", "input", "PingAnonymous"])
+                .with_label_values(&["udp", "input", "VoicePing"])
                 .inc();
 
             crate::metrics::MESSAGES_BYTES
-                .with_label_values(&["udp", "input", "PingAnonymous"])
+                .with_label_values(&["udp", "input", "VoicePing"])
                 .inc_by(size as u64);
 
-            continue;
-        }
+            let mut dest = BytesMut::new();
 
-        // keep dead clients for 20 seconds
-        if let Some(dead) = dead_clients.get(&addr) {
-            if Instant::now().duration_since(*dead).as_secs() < 20 {
-                continue;
+            {
+                client
+                    .read_err()
+                    .await?
+                    .crypt_state
+                    .write_err()
+                    .await?
+                    .encrypt(&client_packet, &mut dest);
+            }
+
+            let buf = &dest.freeze()[..];
+
+            match socket.send_to(buf, addr).await {
+                Ok(_) => {
+                    crate::metrics::MESSAGES_TOTAL
+                        .with_label_values(&["udp", "output", "VoicePing"])
+                        .inc();
+
+                    crate::metrics::MESSAGES_BYTES
+                        .with_label_values(&["udp", "output", "VoicePing"])
+                        .inc_by(buf.len() as u64);
+                }
+                Err(err) => {
+                    tracing::error!("cannot send ping udp packet: {}", err);
+                }
             }
         }
+        _ => {
+            crate::metrics::MESSAGES_TOTAL
+                .with_label_values(&["udp", "input", "VoicePacket"])
+                .inc();
 
-        let client_opt = { state.read().await.get_client_by_socket(&addr) };
+            crate::metrics::MESSAGES_BYTES
+                .with_label_values(&["udp", "input", "VoicePacket"])
+                .inc_by(size as u64);
 
-        let (client, packet) = match client_opt {
-            Some(client) => {
-                let decrypt_result = { client.read().await.crypt_state.write().await.decrypt(&mut buffer) };
+            let send_client_packet = { client.read_err().await?.publisher.send(client_packet).await };
 
-                match decrypt_result {
-                    Ok(p) => (client, p),
-                    Err(err) => {
-                        let username = { client.read().await.authenticate.get_username().to_string() };
-                        tracing::warn!("client {} decrypt error: {}", username, err);
-
-                        crate::metrics::MESSAGES_TOTAL
-                            .with_label_values(&["udp", "input", "VoicePacket"])
-                            .inc();
-
-                        crate::metrics::MESSAGES_BYTES
-                            .with_label_values(&["udp", "input", "VoicePacket"])
-                            .inc_by(size as u64);
-
-                        let restart_crypt = match err {
-                            DecryptError::Late => {
-                                let late = { client.read().await.crypt_state.read().await.late };
-
-                                late > 100
-                            }
-                            DecryptError::Repeat => false,
-                            _ => true,
-                        };
-
-                        if restart_crypt {
-                            tracing::error!("client {} udp decrypt error: {}, reset crypt setup", username, err);
-
-                            let send_crypt_setup = { client.read().await.send_crypt_setup(true).await };
-
-                            if let Err(e) = send_crypt_setup {
-                                tracing::error!("failed to send crypt setup: {:?}", e);
-                            }
-
-                            // Remove socket address from client
-                            if let Some(address) = { client.read().await.udp_socket_addr } {
-                                {
-                                    state.write().await.remove_client_by_socket(&address)
-                                };
-
-                                {
-                                    client.write().await.udp_socket_addr = None;
-                                };
-                            }
-                        }
-
-                        continue;
-                    }
+            match send_client_packet {
+                Ok(_) => (),
+                Err(err) => {
+                    tracing::error!("cannot send voice packet to client: {}", err);
                 }
             }
-            None => {
-                let (client_opt, packet_opt, address_to_remove) = { state.read().await.find_client_for_packet(&mut buffer).await };
-
-                for address in address_to_remove {
-                    {
-                        state.write().await.remove_client_by_socket(&address)
-                    };
-                }
-
-                match (client_opt, packet_opt) {
-                    (Some(client), Some(packet)) => {
-                        {
-                            tracing::info!(
-                                "UPD connected client {} on {}",
-                                client.read().await.authenticate.get_username(),
-                                addr
-                            );
-                        }
-
-                        {
-                            state.write().await.set_client_socket(client.clone(), addr).await;
-                        }
-
-                        (client, packet)
-                    }
-                    _ => {
-                        tracing::error!("unknown client from address {}", addr);
-
-                        dead_clients.insert(addr, Instant::now());
-
-                        crate::metrics::MESSAGES_TOTAL
-                            .with_label_values(&["udp", "input", "VoicePacket"])
-                            .inc();
-
-                        crate::metrics::MESSAGES_BYTES
-                            .with_label_values(&["udp", "input", "VoicePacket"])
-                            .inc_by(size as u64);
-
-                        continue;
-                    }
-                }
-            }
-        };
-
-        // remove from dead clients if exists
-        if dead_clients.contains_key(&addr) {
-            dead_clients.remove(&addr);
         }
-
-        let session_id = { client.read().await.session_id };
-        let client_packet = packet.into_client_bound(session_id);
-
-        match &client_packet {
-            VoicePacket::Ping { .. } => {
-                crate::metrics::MESSAGES_TOTAL
-                    .with_label_values(&["udp", "input", "VoicePing"])
-                    .inc();
-
-                crate::metrics::MESSAGES_BYTES
-                    .with_label_values(&["udp", "input", "VoicePing"])
-                    .inc_by(size as u64);
-
-                let mut dest = BytesMut::new();
-
-                {
-                    client.read().await.crypt_state.write().await.encrypt(&client_packet, &mut dest);
-                }
-
-                let buf = &dest.freeze()[..];
-
-                match socket.send_to(buf, addr).await {
-                    Ok(_) => {
-                        crate::metrics::MESSAGES_TOTAL
-                            .with_label_values(&["udp", "output", "VoicePing"])
-                            .inc();
-
-                        crate::metrics::MESSAGES_BYTES
-                            .with_label_values(&["udp", "output", "VoicePing"])
-                            .inc_by(buf.len() as u64);
-                    }
-                    Err(err) => {
-                        tracing::error!("cannot send ping udp packet: {}", err);
-                    }
-                }
-            }
-            _ => {
-                crate::metrics::MESSAGES_TOTAL
-                    .with_label_values(&["udp", "input", "VoicePacket"])
-                    .inc();
-
-                crate::metrics::MESSAGES_BYTES
-                    .with_label_values(&["udp", "input", "VoicePacket"])
-                    .inc_by(size as u64);
-
-                let send_client_packet = { client.read().await.publisher.send(client_packet).await };
-
-                match send_client_packet {
-                    Ok(_) => (),
-                    Err(err) => {
-                        tracing::error!("cannot send voice packet to client: {}", err);
-                    }
-                }
-            }
-        };
     }
+
+    Ok(())
 }

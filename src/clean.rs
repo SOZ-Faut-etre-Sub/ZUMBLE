@@ -1,35 +1,49 @@
+use crate::error::MumbleError;
 use crate::state::ServerState;
+use crate::sync::RwLock;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::RwLock;
 
 pub async fn clean_loop(state: Arc<RwLock<ServerState>>) {
     loop {
-        let mut client_to_delete = Vec::new();
+        tracing::info!("cleaning clients");
 
-        {
-            for client in state.read().await.clients.values() {
-                let now = Instant::now();
-
-                let duration = { now.duration_since(client.read().await.last_ping.read().await.clone()) };
-
-                if duration.as_secs() > 60 {
-                    client_to_delete.push(client.clone());
-                }
+        match clean_run(state.clone()).await {
+            Ok(_) => (),
+            Err(e) => {
+                tracing::error!("error in clean loop: {}", e);
             }
-        }
-
-        for client in client_to_delete {
-            {
-                match client.read().await.publisher_disconnect.send(true).await {
-                    Ok(_) => {}
-                    Err(err) => {
-                        tracing::error!("error sending disconnect signal: {}", err);
-                    }
-                }
-            };
         }
 
         tokio::time::sleep(std::time::Duration::from_secs(10)).await;
     }
+}
+
+async fn clean_run(state: Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
+    let mut client_to_delete = Vec::new();
+
+    {
+        for client in state.read_err().await?.clients.values() {
+            let now = Instant::now();
+
+            let duration = { now.duration_since(*client.read_err().await?.last_ping.read_err().await?) };
+
+            if duration.as_secs() > 60 {
+                client_to_delete.push(client.clone());
+            }
+        }
+    }
+
+    for client in client_to_delete {
+        {
+            match client.read_err().await?.publisher_disconnect.send(true).await {
+                Ok(_) => {}
+                Err(err) => {
+                    tracing::error!("error sending disconnect signal: {}", err);
+                }
+            }
+        };
+    }
+
+    Ok(())
 }

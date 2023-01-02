@@ -1,9 +1,9 @@
 use crate::client::Client;
 use crate::proto::mumble::ChannelState;
+use crate::sync::RwLock;
 use crate::ServerState;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 #[derive(Debug)]
 pub struct Channel {
@@ -46,11 +46,26 @@ impl Channel {
 
     pub async fn get_listeners(&self, state: Arc<RwLock<ServerState>>) -> HashMap<u32, Arc<RwLock<Client>>> {
         let mut listening_clients = HashMap::new();
-        let state_read = state.read().await;
+
+        let state_read = match state.read_err().await {
+            Ok(s) => s,
+            Err(err) => {
+                tracing::error!("failed to get listeners: {}", err);
+
+                return listening_clients;
+            }
+        };
 
         for client in state_read.clients.values() {
             {
-                let client_read = client.read().await;
+                let client_read = match client.read_err().await {
+                    Ok(c) => c,
+                    Err(err) => {
+                        tracing::error!("failed to get client: {}", err);
+
+                        continue;
+                    }
+                };
 
                 if client_read.channel_id == self.id {
                     listening_clients.insert(client_read.session_id, client.clone());

@@ -1,10 +1,11 @@
+use crate::error::MumbleError;
+use crate::sync::RwLock;
 use crate::ServerState;
 use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::RwLock;
 
 #[derive(Serialize, Deserialize)]
 pub struct MumbleClient {
@@ -27,27 +28,27 @@ pub struct MumbleTarget {
 }
 
 #[actix_web::get("/status")]
-pub async fn get_status(state: web::Data<Arc<RwLock<ServerState>>>) -> HttpResponse {
+pub async fn get_status(state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
     let mut clients = HashMap::new();
-    let sessions = { state.read().await.clients.keys().cloned().collect::<Vec<u32>>() };
+    let sessions = { state.read_err().await?.clients.keys().cloned().collect::<Vec<u32>>() };
 
     for session in sessions {
-        let client = { state.read().await.clients.get(&session).cloned() };
+        let client = { state.read_err().await?.clients.get(&session).cloned() };
 
         if let Some(client) = client {
-            let channel_id = { client.read().await.channel_id };
-            let channel = { state.read().await.channels.get(&channel_id).cloned() };
+            let channel_id = { client.read_err().await?.channel_id };
+            let channel = { state.read_err().await?.channels.get(&channel_id).cloned() };
             let channel_name = {
                 if let Some(channel) = channel {
-                    Some(channel.read().await.name.clone())
+                    Some(channel.read_err().await?.name.clone())
                 } else {
                     None
                 }
             };
 
             {
-                let client_read = client.read().await;
-                let crypt_state = client_read.crypt_state.read().await;
+                let client_read = client.read_err().await?;
+                let crypt_state = client_read.crypt_state.read_err().await?;
 
                 let mut mumble_client = MumbleClient {
                     name: client_read.authenticate.get_username().to_string(),
@@ -64,7 +65,7 @@ pub async fn get_status(state: web::Data<Arc<RwLock<ServerState>>>) -> HttpRespo
 
                 for target in &client_read.targets {
                     let mumble_target = {
-                        let target_read = target.read().await;
+                        let target_read = target.read_err().await?;
 
                         MumbleTarget {
                             sessions: target_read.sessions.clone(),
@@ -80,5 +81,5 @@ pub async fn get_status(state: web::Data<Arc<RwLock<ServerState>>>) -> HttpRespo
         }
     }
 
-    HttpResponse::Ok().json(&clients)
+    Ok(HttpResponse::Ok().json(&clients))
 }

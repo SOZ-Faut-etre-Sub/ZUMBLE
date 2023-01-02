@@ -2,13 +2,13 @@ mod metrics;
 mod mute;
 mod status;
 
+use crate::sync::RwLock;
 use crate::ServerState;
 use actix_server::Server;
 use actix_web::{middleware, web, App, HttpServer};
 use actix_web_httpauth::{extractors::AuthenticationError, headers::www_authenticate::basic::Basic, middleware::HttpAuthentication};
 use rustls::ServerConfig;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 pub fn create_http_server(
     listen: String,

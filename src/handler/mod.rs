@@ -12,6 +12,7 @@ use crate::client::Client;
 use crate::error::MumbleError;
 use crate::proto::mumble;
 use crate::proto::MessageKind;
+use crate::sync::RwLock;
 use crate::voice::{decode_voice_packet, Clientbound, Serverbound, VoicePacket};
 use crate::ServerState;
 use async_trait::async_trait;
@@ -20,7 +21,6 @@ use protobuf::Message;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::RwLock;
 
 #[async_trait]
 pub trait Handler {
@@ -38,7 +38,7 @@ impl MessageHandler {
         let message = T::parse_from_bytes(buf)?;
 
         let (username, client_id) = {
-            let client = client.read().await;
+            let client = client.read_err().await?;
             (client.authenticate.get_username().to_string(), client.session_id)
         };
 
@@ -87,7 +87,7 @@ impl MessageHandler {
                             }
                         };
 
-                        let output_voice_packet = { voice_packet.into_client_bound(client.read().await.session_id) };
+                        let output_voice_packet = { voice_packet.into_client_bound(client.read_err().await?.session_id) };
 
                         output_voice_packet.handle(state, client).await
                     }

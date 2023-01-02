@@ -21,8 +21,13 @@ quick_error! {
         ForceDisconnect {
             display("force disconnecting client")
         }
+        LockError(err: crate::sync::Error) {
+            from()
+        }
     }
 }
+
+impl actix_web::error::ResponseError for MumbleError {}
 
 quick_error! {
     #[derive(Debug)]

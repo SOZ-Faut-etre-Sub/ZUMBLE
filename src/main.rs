@@ -21,10 +21,12 @@ mod target;
 mod varint;
 mod voice;
 
+use crate::clean::clean_loop;
 use crate::http::create_http_server;
 use crate::proto::mumble::Version;
 use crate::server::{create_tcp_server, create_udp_server};
 use crate::state::ServerState;
+use crate::sync::RwLock;
 use clap::Parser;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use std::fs::File;
@@ -33,7 +35,6 @@ use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
-use tokio::sync::RwLock;
 use tokio_rustls::rustls::{self, Certificate, PrivateKey};
 use tokio_rustls::TlsAcceptor;
 
@@ -133,6 +134,12 @@ async fn main() {
 
     actix_rt::spawn(async move {
         create_udp_server(version, udp_socket, udp_state).await;
+    });
+
+    let clean_state = state.clone();
+
+    actix_rt::spawn(async move {
+        clean_loop(clean_state).await;
     });
 
     let tcp_listener = TcpListener::bind(args.listen.clone()).await.unwrap();
