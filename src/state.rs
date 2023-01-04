@@ -174,7 +174,11 @@ impl ServerState {
                     match client.clone().read_err().await {
                         Ok(client_read) => match client_read.send(cursor).await {
                             Ok(_) => (),
-                            Err(e) => tracing::error!("failed to send message: {:?}", e),
+                            Err(e) => {
+                                let username = client_read.authenticate.get_username();
+
+                                tracing::error!("failed to send message for user {}: {:?}", username, e);
+                            }
                         },
                         Err(err) => {
                             tracing::error!("failed to read client: {}", err);
@@ -325,7 +329,10 @@ impl ServerState {
     }
 
     pub fn get_client_by_socket(&self, socket_addr: &SocketAddr) -> Option<Arc<RwLock<Client>>> {
-        self.clients_by_socket.get(socket_addr).cloned()
+        match self.clients_by_socket.get(socket_addr) {
+            Some(client) => Some(client.clone()),
+            None => None,
+        }
     }
 
     pub fn remove_client_by_socket(&mut self, socket_addr: &SocketAddr) {
@@ -358,7 +365,9 @@ impl ServerState {
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
 
-                        if let Some(address) = { c.read_err().await?.udp_socket_addr } {
+                        let address_option = { c.read_err().await?.udp_socket_addr.clone() };
+
+                        if let Some(address) = address_option {
                             address_to_remove.push(address);
 
                             {

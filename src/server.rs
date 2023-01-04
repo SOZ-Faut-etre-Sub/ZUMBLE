@@ -79,16 +79,16 @@ pub fn create_tcp_server(
 
                         match client_run(read, rx, rx_disconnect, state.clone(), client.clone()).await {
                             Ok(_) => (),
-                            Err(e) => tracing::error!("client {} error: {}", username, e),
+                            Err(e) => tracing::error!("client {} error: {:?}", username, e),
                         }
 
                         tracing::info!("client {} disconnected", username);
 
+                        crate::metrics::CLIENTS_TOTAL.dec();
+
                         {
                             state.write_err().await.context("disconnect user")?.disconnect(client).await?;
                         }
-
-                        crate::metrics::CLIENTS_TOTAL.dec();
 
                         Ok::<(), anyhow::Error>(())
                     }
@@ -106,7 +106,9 @@ pub async fn client_run(
     state: Arc<RwLock<ServerState>>,
     client: Arc<RwLock<Client>>,
 ) -> Result<(), anyhow::Error> {
-    if let Some(codec_version) = { state.read_err().await?.check_codec().await? } {
+    let codec_version = { state.read_err().await?.check_codec().await? };
+
+    if let Some(codec_version) = codec_version {
         {
             client
                 .read_err()
@@ -120,7 +122,7 @@ pub async fn client_run(
         let client_sync = client.read_err().await?;
 
         client_sync.sync_client_and_channels(&state).await.map_err(|e| {
-            tracing::error!("init client error during channel sync: {}", e);
+            tracing::error!("init client error during channel sync: {:?}", e);
 
             e
         })?;
@@ -147,7 +149,7 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
     loop {
         match udp_server_run(protocol_version, socket.clone(), state.clone()).await {
             Ok(_) => (),
-            Err(e) => tracing::error!("udp server error: {}", e),
+            Err(e) => tracing::error!("udp server error: {:?}", e),
         }
     }
 }
@@ -239,8 +241,10 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
 
+                        let client_address = { client.read_err().await?.udp_socket_addr.clone() };
+
                         // Remove socket address from client
-                        if let Some(address) = { client.read_err().await?.udp_socket_addr } {
+                        if let Some(address) = client_address {
                             {
                                 state
                                     .write_err()

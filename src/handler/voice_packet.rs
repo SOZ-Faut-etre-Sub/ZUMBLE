@@ -25,8 +25,9 @@ impl Handler for VoicePacket<Clientbound> {
                 // Channel
                 0 => {
                     let channel_id = { client.read_err().await?.channel_id };
+                    let channel_result = { state.read_err().await?.channels.get(&channel_id).cloned() };
 
-                    if let Some(channel) = { state.read_err().await?.channels.get(&channel_id).cloned() } {
+                    if let Some(channel) = channel_result {
                         {
                             listening_clients.extend(channel.read_err().await?.get_listeners(state.clone()).await);
                         }
@@ -40,13 +41,17 @@ impl Handler for VoicePacket<Clientbound> {
                         let target = target.read_err().await?;
 
                         for client_id in &target.sessions {
-                            if let Some(client) = { state.read_err().await?.clients.get(client_id).cloned() } {
+                            let client_result = { state.read_err().await?.clients.get(client_id).cloned() };
+
+                            if let Some(client) = client_result {
                                 listening_clients.insert(*client_id, client);
                             }
                         }
 
                         for channel_id in &target.channels {
-                            if let Some(channel) = { state.read_err().await?.channels.get(channel_id).cloned() } {
+                            let channel_result = { state.read_err().await?.channels.get(channel_id).cloned() };
+
+                            if let Some(channel) = channel_result {
                                 {
                                     listening_clients.extend(channel.read_err().await?.get_listeners(state.clone()).await);
                                 }
@@ -78,9 +83,13 @@ impl Handler for VoicePacket<Clientbound> {
                         match listening_client.read_err().await {
                             Ok(listening_client) => match listening_client.send_voice_packet(self).await {
                                 Ok(_) => (),
-                                Err(err) => tracing::error!("failed to send voice packet to client {}: {}", id, err),
+                                Err(err) => {
+                                    let username = listening_client.authenticate.get_username();
+
+                                    tracing::error!("failed to send voice packet to client {} - {}: {}", id, username, err)
+                                }
                             },
-                            Err(err) => tracing::error!("failed to send voice packet to client {}: {}", id, err),
+                            Err(err) => tracing::error!("failed to send voice packet to client, lock error for {}: {}", id, err),
                         }
                     }
                 })
