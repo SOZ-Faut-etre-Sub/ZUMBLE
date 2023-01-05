@@ -118,7 +118,7 @@ impl MessageHandler {
                         client.read_err().await?.send(payload.as_ref()).await.context(format!("send message of type: {}", kind))
                     },
                     Some(ClientMessage::Disconnect) => {
-                        Ok(())
+                        Err(MumbleError::ForceDisconnect).context("force disconnect")
                     },
                     _ => {
                         Ok(())

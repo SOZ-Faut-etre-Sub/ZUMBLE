@@ -11,6 +11,8 @@ pub enum MumbleError {
     Parse(#[from] protobuf::ProtobufError),
     #[error("voice decrypt error: {0}")]
     Decrypt(#[from] DecryptError),
+    #[error("force disconnecting client")]
+    ForceDisconnect,
     #[error("lock error: {0}")]
     LockError(#[from] crate::sync::Error),
     #[error("send message error: {0}")]
