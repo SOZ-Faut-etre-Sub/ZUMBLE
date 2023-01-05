@@ -1,3 +1,4 @@
+use crate::message::ClientMessage;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -10,10 +11,10 @@ pub enum MumbleError {
     Parse(#[from] protobuf::ProtobufError),
     #[error("voice decrypt error: {0}")]
     Decrypt(#[from] DecryptError),
-    #[error("force disconnecting client")]
-    ForceDisconnect,
     #[error("lock error: {0}")]
     LockError(#[from] crate::sync::Error),
+    #[error("send message error: {0}")]
+    SendError(#[from] tokio::sync::mpsc::error::SendError<ClientMessage>),
 }
 
 impl actix_web::error::ResponseError for MumbleError {}

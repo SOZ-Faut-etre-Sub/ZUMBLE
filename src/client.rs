@@ -1,5 +1,6 @@
 use crate::crypt::CryptState;
 use crate::error::MumbleError;
+use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UserState, Version};
 use crate::proto::{expected_message, message_to_bytes, send_message, MessageKind};
 use crate::sync::RwLock;
@@ -9,7 +10,6 @@ use crate::ServerState;
 use bytes::{BufMut, BytesMut};
 use protobuf::Message;
 use std::net::SocketAddr;
-use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncWriteExt, WriteHalf};
@@ -31,8 +31,7 @@ pub struct Client {
     pub use_opus: bool,
     pub codecs: Vec<i32>,
     pub udp_socket: Arc<UdpSocket>,
-    pub publisher: Sender<VoicePacket<Clientbound>>,
-    pub publisher_disconnect: Sender<bool>,
+    pub publisher: Sender<ClientMessage>,
     pub targets: Vec<Arc<RwLock<VoiceTarget>>>,
     pub last_ping: RwLock<Instant>,
 }
@@ -67,8 +66,7 @@ impl Client {
         crypt_state: CryptState,
         write: WriteHalf<TlsStream<TcpStream>>,
         udp_socket: Arc<UdpSocket>,
-        publisher: Sender<VoicePacket<Clientbound>>,
-        publisher_disconnect: Sender<bool>,
+        publisher: Sender<ClientMessage>,
     ) -> Self {
         let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
         let mut targets = Vec::with_capacity(30);
@@ -89,7 +87,6 @@ impl Client {
             authenticate,
             udp_socket,
             publisher,
-            publisher_disconnect,
             targets,
             last_ping: RwLock::new(Instant::now()),
         }
@@ -150,8 +147,6 @@ impl Client {
     }
 
     pub async fn sync_client_and_channels(&self, state: &Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
-        let mut stream_write = self.write.write_err().await?;
-
         {
             let state_read = state.read_err().await?;
 
@@ -159,14 +154,14 @@ impl Client {
             for channel in state_read.channels.values() {
                 let channel_state = { channel.read_err().await?.get_channel_state() };
 
-                send_message(MessageKind::ChannelState, &channel_state, stream_write.deref_mut()).await?;
+                self.send_message(MessageKind::ChannelState, &channel_state).await?;
             }
 
             // Send user states
             for client in state_read.clients.values() {
                 let user_state = { client.read_err().await?.get_user_state() };
 
-                send_message(MessageKind::UserState, &user_state, stream_write.deref_mut()).await?;
+                self.send_message(MessageKind::UserState, &user_state).await?;
             }
         }
 
@@ -191,10 +186,10 @@ impl Client {
         self.send_message(MessageKind::ServerConfig, &server_config).await
     }
 
-    pub async fn send_voice_packet(&self, packet: &VoicePacket<Clientbound>) -> Result<(), MumbleError> {
+    pub async fn send_voice_packet(&self, packet: VoicePacket<Clientbound>) -> Result<(), MumbleError> {
         if let Some(addr) = self.udp_socket_addr {
             let mut dest = BytesMut::new();
-            self.crypt_state.write_err().await?.encrypt(packet, &mut dest);
+            self.crypt_state.write_err().await?.encrypt(&packet, &mut dest);
 
             let buf = &dest.freeze()[..];
 
@@ -212,7 +207,7 @@ impl Client {
         }
 
         let mut data = BytesMut::new();
-        encode_voice_packet(packet, &mut data);
+        encode_voice_packet(&packet, &mut data);
 
         let bytes = data.freeze();
 

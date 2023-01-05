@@ -9,6 +9,7 @@ mod crypt;
 mod error;
 mod handler;
 mod http;
+mod message;
 mod metrics;
 mod proto;
 mod server;

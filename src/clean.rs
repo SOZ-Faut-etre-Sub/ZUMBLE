@@ -1,4 +1,5 @@
 use crate::error::MumbleError;
+use crate::message::ClientMessage;
 use crate::state::ServerState;
 use crate::sync::RwLock;
 use std::sync::Arc;
@@ -36,7 +37,7 @@ async fn clean_run(state: Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
 
     for client in client_to_delete {
         {
-            match client.read_err().await?.publisher_disconnect.send(true).await {
+            match client.read_err().await?.publisher.send(ClientMessage::Disconnect).await {
                 Ok(_) => {}
                 Err(err) => {
                     tracing::error!("error sending disconnect signal: {}", err);

@@ -1,11 +1,11 @@
 use crate::client::Client;
 use crate::error::MumbleError;
 use crate::handler::Handler;
+use crate::message::ClientMessage;
 use crate::sync::RwLock;
 use crate::voice::{Clientbound, VoicePacket};
 use crate::ServerState;
 use async_trait::async_trait;
-use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -62,7 +62,7 @@ impl Handler for VoicePacket<Clientbound> {
                 // Loopback
                 31 => {
                     {
-                        client.read_err().await?.send_voice_packet(self).await?;
+                        client.read_err().await?.send_voice_packet(self.clone()).await?;
                     }
 
                     return Ok(());
@@ -72,28 +72,15 @@ impl Handler for VoicePacket<Clientbound> {
                 }
             }
 
-            // Concurrent voice send
-            futures_util::stream::iter(listening_clients)
-                .for_each_concurrent(None, |(id, listening_client)| async move {
-                    {
-                        if id == *session_id {
-                            return;
-                        }
+            for client in listening_clients.values() {
+                {
+                    let client_read = client.read_err().await?;
 
-                        match listening_client.read_err().await {
-                            Ok(listening_client) => match listening_client.send_voice_packet(self).await {
-                                Ok(_) => (),
-                                Err(err) => {
-                                    let username = listening_client.authenticate.get_username();
-
-                                    tracing::error!("failed to send voice packet to client {} - {}: {}", id, username, err)
-                                }
-                            },
-                            Err(err) => tracing::error!("failed to send voice packet to client, lock error for {}: {}", id, err),
-                        }
+                    if client_read.session_id != *session_id {
+                        client_read.publisher.send(ClientMessage::SendVoicePacket(self.clone())).await?;
                     }
-                })
-                .await;
+                }
+            }
         }
 
         Ok(())

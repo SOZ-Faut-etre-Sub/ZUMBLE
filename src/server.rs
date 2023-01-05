@@ -1,10 +1,11 @@
 use crate::client::Client;
 use crate::error::DecryptError;
 use crate::handler::MessageHandler;
+use crate::message::ClientMessage;
 use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
 use crate::sync::RwLock;
-use crate::voice::{Clientbound, VoicePacket};
+use crate::voice::VoicePacket;
 use crate::ServerState;
 use actix_server::Server;
 use actix_service::fn_service;
@@ -59,7 +60,6 @@ pub fn create_tcp_server(
 
                         let (read, write) = io::split(stream);
                         let (tx, rx) = mpsc::channel(32);
-                        let (tx_disconnect, rx_disconnect) = mpsc::channel(32);
 
                         let username = authenticate.get_username().to_string();
                         let client = {
@@ -69,7 +69,6 @@ pub fn create_tcp_server(
                                 crypt_state,
                                 write,
                                 tx,
-                                tx_disconnect,
                             )
                         };
 
@@ -77,7 +76,7 @@ pub fn create_tcp_server(
 
                         tracing::info!("new client {} connected", username);
 
-                        match client_run(read, rx, rx_disconnect, state.clone(), client.clone()).await {
+                        match client_run(read, rx, state.clone(), client.clone()).await {
                             Ok(_) => (),
                             Err(e) => tracing::error!("client {} error: {:?}", username, e),
                         }
@@ -101,8 +100,7 @@ pub fn create_tcp_server(
 
 pub async fn client_run(
     mut read: ReadHalf<TlsStream<TcpStream>>,
-    mut receiver: Receiver<VoicePacket<Clientbound>>,
-    mut receiver_disconnect: Receiver<bool>,
+    mut receiver: Receiver<ClientMessage>,
     state: Arc<RwLock<ServerState>>,
     client: Arc<RwLock<Client>>,
 ) -> Result<(), anyhow::Error> {
@@ -141,7 +139,7 @@ pub async fn client_run(
     }
 
     loop {
-        MessageHandler::handle(&mut read, &mut receiver, &mut receiver_disconnect, state.clone(), client.clone()).await?
+        MessageHandler::handle(&mut read, &mut receiver, state.clone(), client.clone()).await?
     }
 }
 
@@ -373,7 +371,14 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
                 .with_label_values(&["udp", "input", "VoicePacket"])
                 .inc_by(size as u64);
 
-            let send_client_packet = { client.read_err().await?.publisher.send(client_packet).await };
+            let send_client_packet = {
+                client
+                    .read_err()
+                    .await?
+                    .publisher
+                    .send(ClientMessage::RouteVoicePacket(client_packet))
+                    .await
+            };
 
             match send_client_packet {
                 Ok(_) => (),

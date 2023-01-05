@@ -2,12 +2,12 @@ use crate::channel::Channel;
 use crate::client::Client;
 use crate::crypt::CryptState;
 use crate::error::MumbleError;
+use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ChannelRemove, ChannelState, CodecVersion, UserRemove, Version};
 use crate::proto::{message_to_bytes, MessageKind};
 use crate::sync::RwLock;
-use crate::voice::{Clientbound, Serverbound, VoicePacket};
+use crate::voice::{Serverbound, VoicePacket};
 use bytes::BytesMut;
-use futures_util::StreamExt;
 use protobuf::Message;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -93,8 +93,7 @@ impl ServerState {
         authenticate: Authenticate,
         crypt_state: CryptState,
         write: WriteHalf<TlsStream<TcpStream>>,
-        publisher: Sender<VoicePacket<Clientbound>>,
-        publisher_disconnect: Sender<bool>,
+        publisher: Sender<ClientMessage>,
     ) -> Arc<RwLock<Client>> {
         let session_id = self.get_free_session_id();
 
@@ -107,7 +106,6 @@ impl ServerState {
             write,
             self.socket.clone(),
             publisher,
-            publisher_disconnect,
         )));
 
         self.clients.insert(session_id, client.clone());
@@ -166,27 +164,20 @@ impl ServerState {
         tracing::trace!("broadcast message: {:?}, {:?}", std::any::type_name::<T>(), message);
 
         let bytes = message_to_bytes(kind, message)?;
-        let cursor = bytes.as_ref();
 
-        futures_util::stream::iter(self.clients.values())
-            .for_each_concurrent(None, |client| async move {
-                {
-                    match client.clone().read_err().await {
-                        Ok(client_read) => match client_read.send(cursor).await {
-                            Ok(_) => (),
-                            Err(e) => {
-                                let username = client_read.authenticate.get_username();
-
-                                tracing::error!("failed to send message for user {}: {:?}", username, e);
-                            }
-                        },
-                        Err(err) => {
-                            tracing::error!("failed to read client: {}", err);
-                        }
-                    }
-                }
-            })
-            .await;
+        for client in self.clients.values() {
+            {
+                client
+                    .read_err()
+                    .await?
+                    .publisher
+                    .send(ClientMessage::SendMessage {
+                        kind,
+                        payload: bytes.clone(),
+                    })
+                    .await?;
+            }
+        }
 
         Ok(())
     }

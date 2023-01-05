@@ -96,7 +96,7 @@ impl CryptState {
         dst.resize(4, 0);
         let mut inner = dst.split_off(4);
 
-        encode_voice_packet(packet, &mut inner);
+        encode_voice_packet(&packet, &mut inner);
 
         let tag = self.ocb_encrypt(inner.as_mut());
         dst.unsplit(inner);

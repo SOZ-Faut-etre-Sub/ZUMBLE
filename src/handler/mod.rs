@@ -10,10 +10,11 @@ mod voice_target;
 
 use crate::client::Client;
 use crate::error::MumbleError;
+use crate::message::ClientMessage;
 use crate::proto::mumble;
 use crate::proto::MessageKind;
 use crate::sync::RwLock;
-use crate::voice::{decode_voice_packet, Clientbound, Serverbound, VoicePacket};
+use crate::voice::{decode_voice_packet, Serverbound};
 use crate::ServerState;
 use anyhow::Context;
 use async_trait::async_trait;
@@ -57,8 +58,7 @@ impl MessageHandler {
 
     pub async fn handle<S: AsyncRead + Unpin>(
         stream: &mut S,
-        consumer: &mut Receiver<VoicePacket<Clientbound>>,
-        force_disconnect: &mut Receiver<bool>,
+        consumer: &mut Receiver<ClientMessage>,
         state: Arc<RwLock<ServerState>>,
         client: Arc<RwLock<Client>>,
     ) -> Result<(), anyhow::Error> {
@@ -106,20 +106,25 @@ impl MessageHandler {
                     }
                 }
             },
-            packet = consumer.recv() => {
-                if let Some(packet) = packet {
-                    packet.handle(state, client).await.context("handle voice packet")
-                } else {
-                    Ok(())
+            consume = consumer.recv() => {
+                match consume {
+                    Some(ClientMessage::RouteVoicePacket(packet)) => {
+                        packet.handle(state, client).await.context("handle voice packet")
+                    },
+                    Some(ClientMessage::SendVoicePacket(packet)) => {
+                        client.read_err().await?.send_voice_packet(packet).await.context("send voice packet")
+                    },
+                    Some(ClientMessage::SendMessage { kind, payload }) => {
+                        client.read_err().await?.send(payload.as_ref()).await.context(format!("send message of type: {}", kind))
+                    },
+                    Some(ClientMessage::Disconnect) => {
+                        Ok(())
+                    },
+                    _ => {
+                        Ok(())
+                    }
                 }
             },
-            disconnect = force_disconnect.recv() => {
-                if let Some(true) = disconnect {
-                    Err(MumbleError::ForceDisconnect).context("force disconnect")
-                } else {
-                    Ok(())
-                }
-            }
         }
     }
 }
