@@ -159,17 +159,17 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
     buffer.resize(size, 0);
 
     let mut cursor = Cursor::new(&buffer[..size]);
-    let kind = cursor.read_u32::<byteorder::BigEndian>().unwrap();
+    let kind = cursor.read_u32::<byteorder::BigEndian>()?;
 
     if size == 12 && kind == 0 {
-        let timestamp = cursor.read_u64::<byteorder::LittleEndian>().unwrap();
+        let timestamp = cursor.read_u64::<byteorder::LittleEndian>()?;
 
         let mut send = Cursor::new(vec![0u8; 24]);
-        send.write_u32::<byteorder::BigEndian>(protocol_version).unwrap();
-        send.write_u64::<byteorder::LittleEndian>(timestamp).unwrap();
-        send.write_u32::<byteorder::BigEndian>(0).unwrap();
-        send.write_u32::<byteorder::BigEndian>(250).unwrap();
-        send.write_u32::<byteorder::BigEndian>(72000).unwrap();
+        send.write_u32::<byteorder::BigEndian>(protocol_version)?;
+        send.write_u64::<byteorder::LittleEndian>(timestamp)?;
+        send.write_u32::<byteorder::BigEndian>(0)?;
+        send.write_u32::<byteorder::BigEndian>(250)?;
+        send.write_u32::<byteorder::BigEndian>(72000)?;
 
         socket.send_to(send.get_ref().as_slice(), addr).await?;
 

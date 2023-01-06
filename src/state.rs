@@ -167,7 +167,7 @@ impl ServerState {
 
         for client in self.clients.values() {
             {
-                client
+                match client
                     .read_err()
                     .await?
                     .publisher
@@ -175,7 +175,13 @@ impl ServerState {
                         kind,
                         payload: bytes.clone(),
                     })
-                    .await?;
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(err) => {
+                        tracing::error!("failed to send message to client: {:?}", err);
+                    }
+                }
             }
         }
 
@@ -408,7 +414,7 @@ impl ServerState {
         remove.set_session(client_id);
         remove.set_reason("disconnected".to_string());
 
-        self.broadcast_message(MessageKind::UserRemove, &remove).await.unwrap();
+        self.broadcast_message(MessageKind::UserRemove, &remove).await?;
 
         let channel_id = { client.read_err().await?.channel_id };
 
