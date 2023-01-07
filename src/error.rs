@@ -16,7 +16,7 @@ pub enum MumbleError {
     #[error("lock error: {0}")]
     LockError(#[from] crate::sync::Error),
     #[error("send message error: {0}")]
-    SendError(#[from] tokio::sync::mpsc::error::SendError<ClientMessage>),
+    SendError(#[from] tokio::sync::mpsc::error::SendTimeoutError<ClientMessage>),
 }
 
 impl actix_web::error::ResponseError for MumbleError {}

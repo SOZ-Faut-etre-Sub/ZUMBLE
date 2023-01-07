@@ -245,8 +245,7 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
                     .read_err()
                     .await?
                     .publisher
-                    .send(ClientMessage::RouteVoicePacket(client_packet))
-                    .await
+                    .try_send(ClientMessage::RouteVoicePacket(client_packet))
             };
 
             match send_client_packet {

@@ -167,16 +167,10 @@ impl ServerState {
 
         for client in self.clients.values() {
             {
-                match client
-                    .read_err()
-                    .await?
-                    .publisher
-                    .send(ClientMessage::SendMessage {
-                        kind,
-                        payload: bytes.clone(),
-                    })
-                    .await
-                {
+                match client.read_err().await?.publisher.try_send(ClientMessage::SendMessage {
+                    kind,
+                    payload: bytes.clone(),
+                }) {
                     Ok(_) => {}
                     Err(err) => {
                         tracing::error!("failed to send message to client: {:?}", err);
@@ -381,8 +375,9 @@ impl ServerState {
         Ok((None, None, address_to_remove))
     }
 
-    pub async fn disconnect(&mut self, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
+    pub async fn disconnect(&mut self, client: Arc<RwLock<Client>>) -> Result<(u32, u32), MumbleError> {
         let client_id = { client.read_err().await?.session_id };
+        let channel_id = { client.read_err().await?.channel_id };
 
         self.clients.remove(&client_id);
 
@@ -392,6 +387,10 @@ impl ServerState {
             }
         }
 
+        Ok((client_id, channel_id))
+    }
+
+    pub async fn remove_client(&self, client_id: u32, channel_id: u32) -> Result<(), MumbleError> {
         for channel in self.channels.values() {
             {
                 channel.write_err().await?.listeners.remove(&client_id);
@@ -415,8 +414,6 @@ impl ServerState {
         remove.set_reason("disconnected".to_string());
 
         self.broadcast_message(MessageKind::UserRemove, &remove).await?;
-
-        let channel_id = { client.read_err().await?.channel_id };
 
         self.check_leave_channel(channel_id).await?;
 

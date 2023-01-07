@@ -37,7 +37,7 @@ async fn clean_run(state: Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
 
     for client in client_to_delete {
         {
-            match client.read_err().await?.publisher.send(ClientMessage::Disconnect).await {
+            match client.read_err().await?.publisher.try_send(ClientMessage::Disconnect) {
                 Ok(_) => {}
                 Err(err) => {
                     tracing::error!("error sending disconnect signal: {}", err);

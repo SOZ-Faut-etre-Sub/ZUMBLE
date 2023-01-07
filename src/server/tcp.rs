@@ -52,7 +52,7 @@ pub fn create_tcp_server(
                         })?;
 
                         let (read, write) = io::split(stream);
-                        let (tx, rx) = mpsc::channel(32);
+                        let (tx, rx) = mpsc::channel(128);
 
                         let username = authenticate.get_username().to_string();
                         let client = {
@@ -78,8 +78,15 @@ pub fn create_tcp_server(
 
                         crate::metrics::CLIENTS_TOTAL.dec();
 
+                        let (client_id, channel_id) = { state.write_err().await.context("disconnect user")?.disconnect(client).await? };
+
                         {
-                            state.write_err().await.context("disconnect user")?.disconnect(client).await?;
+                            state
+                                .read_err()
+                                .await
+                                .context("remove client")?
+                                .remove_client(client_id, channel_id)
+                                .await?;
                         }
 
                         Ok::<(), anyhow::Error>(())

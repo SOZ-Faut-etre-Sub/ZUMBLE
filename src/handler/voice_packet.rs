@@ -77,7 +77,12 @@ impl Handler for VoicePacket<Clientbound> {
                     let client_read = client.read_err().await?;
 
                     if client_read.session_id != *session_id {
-                        client_read.publisher.send(ClientMessage::SendVoicePacket(self.clone())).await?;
+                        match client_read.publisher.try_send(ClientMessage::SendVoicePacket(self.clone())) {
+                            Ok(_) => {}
+                            Err(err) => {
+                                tracing::error!("error sending voice packet message: {:?}", err);
+                            }
+                        }
                     }
                 }
             }
