@@ -239,17 +239,15 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
 
-                        let client_address = { client.read_err().await?.udp_socket_addr.clone() };
+                        let client_address = { client.read_err().await?.udp_socket_addr };
 
                         // Remove socket address from client
                         if let Some(address) = client_address {
-                            {
-                                state
+                            state
                                     .write_err()
                                     .await
                                     .context("remove client by socket")?
-                                    .remove_client_by_socket(&address)
-                            };
+                                    .remove_client_by_socket(&address);
 
                             {
                                 client.write_err().await.context("set udp socket to null")?.udp_socket_addr = None;
@@ -265,13 +263,11 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
             let (client_opt, packet_opt, address_to_remove) = { state.read_err().await?.find_client_for_packet(&mut buffer).await? };
 
             for address in address_to_remove {
-                {
-                    state
+                state
                         .write_err()
                         .await
                         .context("remove client by socket when searching for one")?
-                        .remove_client_by_socket(&address)
-                };
+                        .remove_client_by_socket(&address);
             }
 
             match (client_opt, packet_opt) {

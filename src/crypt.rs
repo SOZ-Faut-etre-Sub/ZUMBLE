@@ -96,7 +96,7 @@ impl CryptState {
         dst.resize(4, 0);
         let mut inner = dst.split_off(4);
 
-        encode_voice_packet(&packet, &mut inner);
+        encode_voice_packet(packet, &mut inner);
 
         let tag = self.ocb_encrypt(inner.as_mut());
         dst.unsplit(inner);
@@ -160,7 +160,7 @@ impl CryptState {
             self.decrypt_nonce = saved_nonce;
         }
 
-        self.lost = (self.lost as i32 + lost as i32) as u32;
+        self.lost = (self.lost as i32 + lost) as u32;
 
         decode_voice_packet(buf)
     }

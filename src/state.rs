@@ -248,7 +248,7 @@ impl ServerState {
                 Err(e) => tracing::error!("failed to send user state: {:?}", e),
             }
 
-            return Ok(self.check_leave_channel(leave_channel_id).await?);
+            return self.check_leave_channel(leave_channel_id).await;
         }
 
         Ok(None)
@@ -320,10 +320,7 @@ impl ServerState {
     }
 
     pub fn get_client_by_socket(&self, socket_addr: &SocketAddr) -> Option<Arc<RwLock<Client>>> {
-        match self.clients_by_socket.get(socket_addr) {
-            Some(client) => Some(client.clone()),
-            None => None,
-        }
+        self.clients_by_socket.get(socket_addr).cloned()
     }
 
     pub fn remove_client_by_socket(&mut self, socket_addr: &SocketAddr) {
@@ -356,14 +353,12 @@ impl ServerState {
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
 
-                        let address_option = { c.read_err().await?.udp_socket_addr.clone() };
+                        let address_option = { c.read_err().await?.udp_socket_addr };
 
                         if let Some(address) = address_option {
                             address_to_remove.push(address);
 
-                            {
-                                c.write_err().await?.udp_socket_addr = None
-                            };
+                            c.write_err().await?.udp_socket_addr = None;
                         }
                     }
 
