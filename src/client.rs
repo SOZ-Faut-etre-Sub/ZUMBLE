@@ -104,6 +104,10 @@ impl Client {
         self.mute = mute;
     }
 
+    pub fn deaf(&mut self, deaf: bool) {
+        self.deaf = deaf;
+    }
+
     pub async fn send_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
         tracing::trace!(
             "[{}] [{}] send message: {:?}, {:?}",

@@ -76,11 +76,19 @@ impl Handler for VoicePacket<Clientbound> {
                 {
                     let client_read = client.read_err().await?;
 
+                    if client_read.deaf {
+                        continue;
+                    }
+
                     if client_read.session_id != *session_id {
                         match client_read.publisher.try_send(ClientMessage::SendVoicePacket(self.clone())) {
                             Ok(_) => {}
                             Err(err) => {
-                                tracing::error!("error sending voice packet message: {:?}", err);
+                                tracing::error!(
+                                    "error sending voice packet message to {}: {}",
+                                    client_read.authenticate.get_username(),
+                                    err
+                                );
                             }
                         }
                     }

@@ -167,13 +167,15 @@ impl ServerState {
 
         for client in self.clients.values() {
             {
-                match client.read_err().await?.publisher.try_send(ClientMessage::SendMessage {
+                let client_read = client.read_err().await?;
+
+                match client_read.publisher.try_send(ClientMessage::SendMessage {
                     kind,
                     payload: bytes.clone(),
                 }) {
                     Ok(_) => {}
                     Err(err) => {
-                        tracing::error!("failed to send message to client: {:?}", err);
+                        tracing::error!("failed to send message to {}: {}", client_read.authenticate.get_username(), err);
                     }
                 }
             }

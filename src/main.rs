@@ -55,6 +55,9 @@ struct Args {
     /// Use TLS for the http server (https), will use the same certificate as the mumble server
     #[clap(long)]
     https: bool,
+    /// Log http requests to stdout
+    #[clap(long)]
+    http_log: bool,
     /// Path to the key file for the TLS certificate
     #[clap(long, value_parser, default_value = "key.pem")]
     key: String,
@@ -126,7 +129,9 @@ async fn main() {
     server_version.set_release(VERSION.to_string());
     server_version.set_version(version);
 
-    let udp_socket = Arc::new(UdpSocket::bind(&args.listen).await.unwrap());
+    let udp = UdpSocket::bind(&args.listen).await.unwrap();
+    let udp_std = udp.into_std().unwrap();
+    let udp_socket = Arc::new(UdpSocket::from_std(udp_std).unwrap());
     let state = Arc::new(RwLock::new(ServerState::new(udp_socket.clone())));
     let udp_state = state.clone();
 
@@ -155,6 +160,7 @@ async fn main() {
         state.clone(),
         args.http_user,
         args.http_password,
+        args.http_log,
     );
 
     if let Some(http_server) = http_server {

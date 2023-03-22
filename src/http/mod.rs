@@ -1,3 +1,4 @@
+mod deaf;
 mod metrics;
 mod mute;
 mod status;
@@ -5,6 +6,7 @@ mod status;
 use crate::sync::RwLock;
 use crate::ServerState;
 use actix_server::Server;
+use actix_web::middleware::Condition;
 use actix_web::{middleware, web, App, HttpServer};
 use actix_web_httpauth::{extractors::AuthenticationError, headers::www_authenticate::basic::Basic, middleware::HttpAuthentication};
 use rustls::ServerConfig;
@@ -17,6 +19,7 @@ pub fn create_http_server(
     state: Arc<RwLock<ServerState>>,
     user: String,
     password: String,
+    log_requests: bool,
 ) -> Option<Server> {
     let mut server = HttpServer::new(move || {
         let user = user.clone();
@@ -44,10 +47,12 @@ pub fn create_http_server(
         App::new()
             .app_data(web::Data::new(state.clone()))
             .wrap(auth)
-            .wrap(logger)
+            .wrap(Condition::new(log_requests, logger))
             .service(metrics::get_metrics)
             .service(mute::get_mute)
             .service(mute::post_mute)
+            .service(deaf::get_deaf)
+            .service(deaf::post_deaf)
             .service(status::get_status)
     });
 

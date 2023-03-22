@@ -36,9 +36,13 @@ pub fn create_tcp_server(
                     let server_version = server_version.clone();
                     let state = state.clone();
 
-                    stream.set_nodelay(true).unwrap();
-
                     async move {
+                        stream.set_nodelay(true)?;
+
+                        let stream_std = stream.into_std()?;
+                        stream_std.set_write_timeout(Some(std::time::Duration::from_secs(1)))?;
+
+                        let stream = TcpStream::from_std(stream_std)?;
                         let mut stream = acceptor.accept(stream).await.map_err(|e| {
                             tracing::error!("accept error: {}", e);
 
@@ -139,6 +143,22 @@ pub async fn client_run(
     }
 
     loop {
-        MessageHandler::handle(&mut read, &mut receiver, state.clone(), client.clone()).await?
+        match MessageHandler::handle(&mut read, &mut receiver, state.clone(), client.clone()).await {
+            Ok(_) => (),
+            Err(e) => {
+                if e.is::<io::Error>() {
+                    let ioerr = e.downcast::<io::Error>().unwrap();
+
+                    // avoid error for client disconnect
+                    if ioerr.kind() == io::ErrorKind::UnexpectedEof {
+                        return Ok(());
+                    }
+
+                    return Err(ioerr.into());
+                }
+
+                return Err(e);
+            }
+        }
     }
 }
