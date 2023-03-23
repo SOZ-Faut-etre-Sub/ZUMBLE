@@ -129,9 +129,7 @@ async fn main() {
     server_version.set_release(VERSION.to_string());
     server_version.set_version(version);
 
-    let udp = UdpSocket::bind(&args.listen).await.unwrap();
-    let udp_std = udp.into_std().unwrap();
-    let udp_socket = Arc::new(UdpSocket::from_std(udp_std).unwrap());
+    let udp_socket = Arc::new(UdpSocket::bind(&args.listen).await.unwrap());
     let state = Arc::new(RwLock::new(ServerState::new(udp_socket.clone())));
     let udp_state = state.clone();
 

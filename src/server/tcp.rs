@@ -39,10 +39,6 @@ pub fn create_tcp_server(
                     async move {
                         stream.set_nodelay(true)?;
 
-                        let stream_std = stream.into_std()?;
-                        stream_std.set_write_timeout(Some(std::time::Duration::from_secs(1)))?;
-
-                        let stream = TcpStream::from_std(stream_std)?;
                         let mut stream = acceptor.accept(stream).await.map_err(|e| {
                             tracing::error!("accept error: {}", e);
 

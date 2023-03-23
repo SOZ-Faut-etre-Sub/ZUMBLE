@@ -1,20 +1,21 @@
 use crate::crypt::CryptState;
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
-use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UserState, Version};
+use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UDPTunnel, UserState, Version};
 use crate::proto::{expected_message, message_to_bytes, send_message, MessageKind};
 use crate::sync::RwLock;
 use crate::target::VoiceTarget;
 use crate::voice::{encode_voice_packet, Clientbound, VoicePacket};
 use crate::ServerState;
-use bytes::{BufMut, BytesMut};
+use bytes::BytesMut;
 use protobuf::Message;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
+use tokio::time::timeout;
 use tokio_rustls::server::TlsStream;
 
 pub struct Client {
@@ -97,7 +98,11 @@ impl Client {
     }
 
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {
-        Ok(self.write.write_err().await?.write_all(data).await?)
+        match timeout(Duration::from_secs(1), self.write.write_err().await?.write_all(data)).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(MumbleError::Io(e)),
+            Err(_) => Err(MumbleError::Timeout),
+        }
     }
 
     pub fn mute(&mut self, mute: bool) {
@@ -197,7 +202,11 @@ impl Client {
 
             let buf = &dest.freeze()[..];
 
-            self.udp_socket.send_to(buf, addr).await?;
+            match timeout(Duration::from_secs(1), self.udp_socket.send_to(buf, addr)).await {
+                Ok(Ok(_)) => Ok(()),
+                Ok(Err(e)) => Err(MumbleError::Io(e)),
+                Err(_) => Err(MumbleError::Timeout),
+            }?;
 
             crate::metrics::MESSAGES_TOTAL
                 .with_label_values(&["udp", "output", "VoicePacket"])
@@ -212,29 +221,12 @@ impl Client {
 
         let mut data = BytesMut::new();
         encode_voice_packet(&packet, &mut data);
-
         let bytes = data.freeze();
 
-        let mut buffer = BytesMut::new();
-        buffer.put_u16(MessageKind::UDPTunnel as u16);
-        buffer.put_u32(bytes.len() as u32);
-        buffer.put_slice(&bytes);
+        let mut tunnel_message = UDPTunnel::default();
+        tunnel_message.set_packet(bytes.to_vec());
 
-        {
-            let mut stream = self.write.write_err().await?;
-            stream.write_all(buffer.as_ref()).await?;
-            stream.flush().await?;
-        }
-
-        crate::metrics::MESSAGES_TOTAL
-            .with_label_values(&["tcp", "output", "VoicePacket"])
-            .inc();
-
-        crate::metrics::MESSAGES_BYTES
-            .with_label_values(&["tcp", "output", "VoicePacket"])
-            .inc_by(buffer.len() as u64);
-
-        Ok(())
+        self.send_message(MessageKind::UDPTunnel, &tunnel_message).await
     }
 
     pub fn update(&mut self, state: &UserState) {
