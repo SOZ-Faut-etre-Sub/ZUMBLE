@@ -5,6 +5,7 @@ use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 #[derive(Serialize, Deserialize)]
@@ -36,7 +37,7 @@ pub async fn get_status(state: web::Data<Arc<RwLock<ServerState>>>) -> Result<Ht
         let client = { state.read_err().await?.clients.get(&session).cloned() };
 
         if let Some(client) = client {
-            let channel_id = { client.read_err().await?.channel_id };
+            let channel_id = { client.read_err().await?.channel_id.load(Ordering::Relaxed) };
             let channel = { state.read_err().await?.channels.get(&channel_id).cloned() };
             let channel_name = {
                 if let Some(channel) = channel {

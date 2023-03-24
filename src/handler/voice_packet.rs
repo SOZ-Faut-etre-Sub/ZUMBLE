@@ -8,6 +8,7 @@ use crate::ServerState;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 #[async_trait]
 impl Handler for VoicePacket<Clientbound> {
@@ -24,7 +25,7 @@ impl Handler for VoicePacket<Clientbound> {
             match *target {
                 // Channel
                 0 => {
-                    let channel_id = { client.read_err().await?.channel_id };
+                    let channel_id = { client.read_err().await?.channel_id.load(Ordering::Relaxed) };
                     let channel_result = { state.read_err().await?.channels.get(&channel_id).cloned() };
 
                     if let Some(channel) = channel_result {

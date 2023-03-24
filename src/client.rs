@@ -11,6 +11,7 @@ use bytes::BytesMut;
 use protobuf::Message;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
@@ -22,7 +23,7 @@ pub struct Client {
     pub version: Version,
     pub authenticate: Authenticate,
     pub session_id: u32,
-    pub channel_id: u32,
+    pub channel_id: AtomicU32,
     pub mute: bool,
     pub deaf: bool,
     pub write: RwLock<WriteHalf<TlsStream<TcpStream>>>,
@@ -76,7 +77,7 @@ impl Client {
         Self {
             version,
             session_id,
-            channel_id,
+            channel_id: AtomicU32::new(channel_id),
             crypt_state: Arc::new(RwLock::new(crypt_state)),
             write: RwLock::new(write),
             tokens,
@@ -239,21 +240,23 @@ impl Client {
         }
     }
 
-    pub fn join_channel(&mut self, mut channel_id: u32) -> Option<u32> {
-        if channel_id == self.channel_id {
+    pub fn join_channel(&self, channel_id: u32) -> Option<u32> {
+        let current_channel = self.channel_id.load(Ordering::Relaxed);
+
+        if channel_id == current_channel {
             return None;
         }
 
-        std::mem::swap(&mut self.channel_id, &mut channel_id);
+        self.channel_id.store(channel_id, Ordering::Relaxed);
 
-        Some(channel_id)
+        Some(current_channel)
     }
 
     pub fn get_user_state(&self) -> UserState {
         let mut user_state = UserState::new();
 
         user_state.set_user_id(self.session_id);
-        user_state.set_channel_id(self.channel_id);
+        user_state.set_channel_id(self.channel_id.load(Ordering::Relaxed));
         user_state.set_session(self.session_id);
         user_state.set_name(self.authenticate.get_username().to_string());
 

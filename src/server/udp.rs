@@ -6,10 +6,9 @@ use crate::ServerState;
 use anyhow::Context;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
-use std::collections::HashMap;
 use std::io::Cursor;
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
 use tokio::net::UdpSocket;
 
 pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) {
@@ -23,10 +22,20 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
 
 async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) -> Result<(), anyhow::Error> {
     let mut buffer = BytesMut::zeroed(1024);
-    let mut dead_clients = HashMap::new();
     let (size, addr) = socket.recv_from(&mut buffer).await?;
     buffer.resize(size, 0);
 
+    tokio::spawn(async move {
+        match handle_packet(buffer, size, addr, protocol_version, socket, state).await {
+            Ok(_) => (),
+            Err(e) => tracing::error!("udp server handle packet error: {:?}", e),
+        }
+    });
+
+    Ok(())
+}
+
+async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) -> Result<(), anyhow::Error> {
     let mut cursor = Cursor::new(&buffer[..size]);
     let kind = cursor.read_u32::<byteorder::BigEndian>()?;
 
@@ -53,17 +62,12 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
         return Ok(());
     }
 
-    // keep dead clients for 20 seconds
-    if let Some(dead) = dead_clients.get(&addr) {
-        if Instant::now().duration_since(*dead).as_secs() < 20 {
-            return Ok(());
-        }
-    }
-
     let client_opt = { state.read_err().await?.get_client_by_socket(&addr) };
 
     let (client, packet) = match client_opt {
         Some(client) => {
+            // Send decrypt packet
+
             let decrypt_result = {
                 client
                     .read_err()
@@ -167,8 +171,6 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
                 _ => {
                     tracing::error!("unknown client from address {}", addr);
 
-                    dead_clients.insert(addr, Instant::now());
-
                     crate::metrics::MESSAGES_TOTAL
                         .with_label_values(&["udp", "input", "VoicePacket"])
                         .inc();
@@ -182,11 +184,6 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
             }
         }
     };
-
-    // remove from dead clients if exists
-    if dead_clients.contains_key(&addr) {
-        dead_clients.remove(&addr);
-    }
 
     let session_id = { client.read_err().await?.session_id };
     let client_packet = packet.into_client_bound(session_id);

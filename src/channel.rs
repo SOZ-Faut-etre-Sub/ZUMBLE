@@ -4,6 +4,7 @@ use crate::sync::RwLock;
 use crate::ServerState;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 #[derive(Debug)]
 pub struct Channel {
@@ -67,7 +68,7 @@ impl Channel {
                     }
                 };
 
-                if client_read.channel_id == self.id {
+                if client_read.channel_id.load(Ordering::Relaxed) == self.id {
                     listening_clients.insert(client_read.session_id, client.clone());
                 }
             }

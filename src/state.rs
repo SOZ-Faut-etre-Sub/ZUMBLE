@@ -12,6 +12,7 @@ use protobuf::Message;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
@@ -189,7 +190,7 @@ impl ServerState {
             {
                 let client = client.read_err().await?;
 
-                if client.channel_id == leave_channel_id {
+                if client.channel_id.load(Ordering::Relaxed) == leave_channel_id {
                     return Ok(None);
                 }
             }
@@ -239,7 +240,7 @@ impl ServerState {
     }
 
     pub async fn set_client_channel(&self, client: Arc<RwLock<Client>>, channel_id: u32) -> Result<Option<u32>, MumbleError> {
-        let leave_channel_id = { client.write_err().await?.join_channel(channel_id) };
+        let leave_channel_id = { client.read_err().await?.join_channel(channel_id) };
 
         if let Some(leave_channel_id) = leave_channel_id {
             // Broadcast new user state
@@ -388,7 +389,7 @@ impl ServerState {
             self.clients_by_socket.remove(&socket_addr);
         }
 
-        let channel_id = { client.read_err().await?.channel_id };
+        let channel_id = { client.read_err().await?.channel_id.load(Ordering::Relaxed) };
 
         Ok((client_id, channel_id))
     }
