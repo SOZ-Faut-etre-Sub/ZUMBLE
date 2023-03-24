@@ -76,9 +76,18 @@ pub fn create_tcp_server(
 
                         tracing::info!("client {} disconnected", username);
 
-                        crate::metrics::CLIENTS_TOTAL.dec();
+                        let (client_id, channel_id) = {
+                            match state.write_err().await.context("disconnect user")?.disconnect(client).await {
+                                Ok((client_id, channel_id)) => (client_id, channel_id),
+                                Err(e) => {
+                                    tracing::error!("disconnect user error: {}", e);
 
-                        let (client_id, channel_id) = { state.write_err().await.context("disconnect user")?.disconnect(client).await? };
+                                    return Ok(());
+                                }
+                            }
+                        };
+
+                        crate::metrics::CLIENTS_TOTAL.dec();
 
                         {
                             state

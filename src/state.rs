@@ -379,38 +379,21 @@ impl ServerState {
 
     pub async fn disconnect(&mut self, client: Arc<RwLock<Client>>) -> Result<(u32, u32), MumbleError> {
         let client_id = { client.read_err().await?.session_id };
-        let channel_id = { client.read_err().await?.channel_id };
 
         self.clients.remove(&client_id);
 
-        {
-            if let Some(socket_addr) = client.read_err().await?.udp_socket_addr {
-                self.clients_by_socket.remove(&socket_addr);
-            }
+        let socket_addr = { client.read_err().await?.udp_socket_addr.clone() };
+
+        if let Some(socket_addr) = socket_addr {
+            self.clients_by_socket.remove(&socket_addr);
         }
+
+        let channel_id = { client.read_err().await?.channel_id };
 
         Ok((client_id, channel_id))
     }
 
     pub async fn remove_client(&self, client_id: u32, channel_id: u32) -> Result<(), MumbleError> {
-        for channel in self.channels.values() {
-            {
-                channel.write_err().await?.listeners.remove(&client_id);
-            }
-        }
-
-        for client in self.clients.values() {
-            {
-                let client_read = client.read_err().await?;
-
-                for target in &client_read.targets {
-                    {
-                        target.write_err().await?.sessions.remove(&client_id);
-                    }
-                }
-            }
-        }
-
         let mut remove = UserRemove::new();
         remove.set_session(client_id);
         remove.set_reason("disconnected".to_string());
