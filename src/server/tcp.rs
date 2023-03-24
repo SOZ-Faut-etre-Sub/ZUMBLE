@@ -37,65 +37,9 @@ pub fn create_tcp_server(
                     let state = state.clone();
 
                     async move {
-                        stream.set_nodelay(true)?;
-
-                        let mut stream = acceptor.accept(stream).await.map_err(|e| {
-                            tracing::error!("accept error: {}", e);
-
-                            e
-                        })?;
-
-                        let (version, authenticate, crypt_state) = Client::init(&mut stream, server_version).await.map_err(|e| {
-                            tracing::error!("init client error: {}", e);
-
-                            e
-                        })?;
-
-                        let (read, write) = io::split(stream);
-                        let (tx, rx) = mpsc::channel(128);
-
-                        let username = authenticate.get_username().to_string();
-                        let client = {
-                            state.write_err().await.context("failed to add client")?.add_client(
-                                version,
-                                authenticate,
-                                crypt_state,
-                                write,
-                                tx,
-                            )
-                        };
-
-                        crate::metrics::CLIENTS_TOTAL.inc();
-
-                        tracing::info!("new client {} connected", username);
-
-                        match client_run(read, rx, state.clone(), client.clone()).await {
+                        match handle_new_client(acceptor, server_version, state, stream).await {
                             Ok(_) => (),
-                            Err(e) => tracing::error!("client {} error: {:?}", username, e),
-                        }
-
-                        tracing::info!("client {} disconnected", username);
-
-                        let (client_id, channel_id) = {
-                            match state.write_err().await.context("disconnect user")?.disconnect(client).await {
-                                Ok((client_id, channel_id)) => (client_id, channel_id),
-                                Err(e) => {
-                                    tracing::error!("disconnect user error: {}", e);
-
-                                    return Ok(());
-                                }
-                            }
-                        };
-
-                        crate::metrics::CLIENTS_TOTAL.dec();
-
-                        {
-                            state
-                                .read_err()
-                                .await
-                                .context("remove client")?
-                                .remove_client(client_id, channel_id)
-                                .await?;
+                            Err(e) => tracing::error!("handle client error: {:?}", e),
                         }
 
                         Ok::<(), anyhow::Error>(())
@@ -105,6 +49,57 @@ pub fn create_tcp_server(
         )
         .expect("cannot create tcp server")
         .run()
+}
+
+async fn handle_new_client(acceptor: TlsAcceptor,
+                     server_version: Version,
+                     state: Arc<RwLock<ServerState>>, stream: TcpStream) -> Result<(), anyhow::Error> {
+    stream.set_nodelay(true).context("set stream no delay")?;
+
+    let mut stream = acceptor.accept(stream).await.context("accept tls")?;
+    let (version, authenticate, crypt_state) = Client::init(&mut stream, server_version).await.context("init client")?;
+
+    let (read, write) = io::split(stream);
+    let (tx, rx) = mpsc::channel(128);
+
+    let username = authenticate.get_username().to_string();
+    let client = {
+        state.write_err().await.context("add client to server")?.add_client(
+            version,
+            authenticate,
+            crypt_state,
+            write,
+            tx,
+        )
+    };
+
+    crate::metrics::CLIENTS_TOTAL.inc();
+
+    tracing::info!("new client {} connected", username);
+
+    match client_run(read, rx, state.clone(), client.clone()).await {
+        Ok(_) => (),
+        Err(e) => tracing::error!("client {} error: {:?}", username, e),
+    }
+
+    tracing::info!("client {} disconnected", username);
+
+    let (client_id, channel_id) = {
+        state.write_err().await.context("wait state for disconnect user")?.disconnect(client).await.context("disconnect user")?
+    };
+
+    crate::metrics::CLIENTS_TOTAL.dec();
+
+    {
+        state
+            .read_err()
+            .await
+            .context("wait state for remove client")?
+            .remove_client(client_id, channel_id)
+            .await.context("remove client")?;
+    }
+
+    Ok(())
 }
 
 pub async fn client_run(
