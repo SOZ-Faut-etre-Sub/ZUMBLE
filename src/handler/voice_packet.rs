@@ -20,6 +20,12 @@ impl Handler for VoicePacket<ClientBound> {
             return Ok(());
         }
 
+        let mute_all = state.mute_all.load(Ordering::Relaxed);
+
+        if mute_all {
+            return Ok(());
+        }
+        
         if let VoicePacket::<ClientBound>::Audio { target, session_id, .. } = self {
             // copy the data into an arc so we can reuse the packet for each client
 

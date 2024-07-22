@@ -12,8 +12,9 @@ use protobuf::Message;
 // use scc::HashCache;
 use scc::ebr::Guard;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
@@ -71,6 +72,7 @@ pub struct ServerState {
     // pub logs: HashCache<SocketAddr, ()>,
     session_count: AtomicU32,
     channel_count: AtomicU32,
+    pub mute_all: AtomicBool,
 }
 
 impl ServerState {
@@ -92,6 +94,7 @@ impl ServerState {
             socket,
             session_count: AtomicU32::new(1),
             channel_count: AtomicU32::new(1),
+            mute_all: AtomicBool::new(false),
         }
     }
 

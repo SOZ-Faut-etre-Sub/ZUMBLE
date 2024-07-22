@@ -14,7 +14,7 @@ use axum::{
 use axum_auth_wrapper::auth_basic;
 use deaf::{get_deaf, post_deaf};
 use metrics::get_metrics;
-use mute::{get_mute, post_mute};
+use mute::{get_mute, post_mute, post_mute_all};
 use status::get_status;
 
 use crate::state::ServerStateRef;
@@ -46,6 +46,7 @@ pub fn create_http_server(state: ServerStateRef, username: String, password: Opt
             .route("/metrics", get(get_metrics))
             .route("/mute", post(post_mute))
             .route("/mute/:player_id", get(get_mute))
+            .route("/mute_all", post(post_mute_all))
             .route("/status", get(get_status))
             .route_layer(from_fn_with_state(app_state.clone(), auth_basic))
             .with_state(app_state),
