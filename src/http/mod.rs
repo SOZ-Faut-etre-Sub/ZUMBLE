@@ -9,16 +9,15 @@ use actix_server::Server;
 use actix_web::middleware::Condition;
 use actix_web::{middleware, web, App, HttpServer};
 use actix_web_httpauth::{extractors::AuthenticationError, headers::www_authenticate::basic::Basic, middleware::HttpAuthentication};
-use rustls::ServerConfig;
 use std::sync::Arc;
 
 pub fn create_http_server(
     listen: String,
-    tls_config: ServerConfig,
+    tls_config: rustls::ServerConfig,
     use_tls: bool,
     state: Arc<RwLock<ServerState>>,
     user: String,
-    password: String,
+    password: Option<String>,
     log_requests: bool,
 ) -> Option<Server> {
     let mut server = HttpServer::new(move || {
@@ -30,10 +29,15 @@ pub fn create_http_server(
             let password = password.clone();
 
             async move {
-                let user = user.clone();
                 let password = password.clone();
 
-                if credentials.user_id() == user.as_str() && credentials.password() == Some(password.as_str()) {
+                if password.is_none() {
+                    return Err((AuthenticationError::new(Basic::with_realm("Restricted area")).into(), req))
+                }
+
+                let user = user.clone();
+
+                if credentials.user_id() == user.as_str() && credentials.password() == Some(password.unwrap().as_str()) {
                     Ok(req)
                 } else {
                     Err((AuthenticationError::new(Basic::with_realm("Restricted area")).into(), req))
@@ -58,7 +62,7 @@ pub fn create_http_server(
 
     server = if use_tls {
         server
-            .bind_rustls(listen, tls_config)
+            .bind_rustls_0_23(listen, tls_config)
             .map_err(|e| {
                 tracing::error!("bind error: {}", e);
             })

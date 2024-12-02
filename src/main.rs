@@ -26,20 +26,21 @@ use crate::server::{create_tcp_server, create_udp_server};
 use crate::state::ServerState;
 use crate::sync::RwLock;
 use clap::Parser;
-use rustls_pemfile::{certs, pkcs8_private_keys};
-use std::fs::File;
-use std::io;
-use std::io::BufReader;
-use std::path::Path;
+use rcgen::{generate_simple_self_signed, CertifiedKey};
+use rustls_pki_types::pem::PemObject;
+use rustls_pki_types::PrivateKeyDer;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
-use tokio_rustls::rustls::{self, Certificate, PrivateKey};
+use tokio_rustls::rustls::{self};
 use tokio_rustls::TlsAcceptor;
 
 /// Zumble, a mumble server implementation for FiveM
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, version, about, long_about = None, disable_help_flag = true)]
 struct Args {
+    #[clap(long, action = clap::ArgAction::HelpLong)]
+    help: Option<bool>,
+
     /// Listen address for TCP and UDP connections for mumble voip clients (or other clients that support the mumble protocol)
     #[clap(short, long, value_parser, default_value = "0.0.0.0:64738")]
     listen: String,
@@ -51,7 +52,7 @@ struct Args {
     http_user: String,
     /// Password for the http server api basic authentification
     #[clap(long, value_parser)]
-    http_password: String,
+    http_password: Option<String>,
     /// Use TLS for the http server (https), will use the same certificate as the mumble server
     #[clap(long)]
     https: bool,
@@ -66,18 +67,6 @@ struct Args {
     cert: String,
 }
 
-fn load_certs<P: AsRef<Path>>(path: P) -> io::Result<Vec<Certificate>> {
-    certs(&mut BufReader::new(File::open(path)?))
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid cert"))
-        .map(|mut certs| certs.drain(..).map(Certificate).collect())
-}
-
-fn load_keys<P: AsRef<Path>>(path: P) -> io::Result<Vec<PrivateKey>> {
-    pkcs8_private_keys(&mut BufReader::new(File::open(path)?))
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid key"))
-        .map(|mut keys| keys.drain(..).map(PrivateKey).collect())
-}
-
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[actix_web_codegen::main]
@@ -86,34 +75,17 @@ async fn main() {
 
     let args = Args::parse();
 
-    let certs = match load_certs(args.cert.as_str()) {
-        Ok(certs) => certs,
-        Err(e) => {
-            tracing::error!("cannot load certificate at path {}: {}", args.cert, e);
-            return;
-        }
-    };
+    let CertifiedKey { cert, key_pair } = generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
 
-    let mut keys = match load_keys(args.key.as_str()) {
-        Ok(k) => k,
-        Err(e) => {
-            tracing::error!("cannot load key at path {}: {}", args.key, e);
-            return;
-        }
-    };
+    let pem = key_pair.serialize_pem();
 
-    let config = match rustls::ServerConfig::builder()
-        .with_safe_defaults()
+    let key_der = PrivateKeyDer::from_pem_slice(pem.as_bytes()).expect("Couldn't make key_der");
+
+
+    let config = rustls::ServerConfig::builder()
         .with_no_client_auth()
-        .with_single_cert(certs, keys.remove(0))
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))
-    {
-        Ok(config) => config,
-        Err(e) => {
-            tracing::error!("cannot create tls config: {}", e);
-            return;
-        }
-    };
+        .with_single_cert(vec![cert.der().clone()], key_der)
+        .expect("Unable to create tlsconfig");
 
     let acceptor = TlsAcceptor::from(Arc::new(config.clone()));
 
