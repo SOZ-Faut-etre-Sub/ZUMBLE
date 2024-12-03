@@ -121,6 +121,8 @@ impl ServerState {
             state.get_temporary(),
         ));
 
+        tracing::debug!("Created channel {} with name {}", channel_id, state.get_name().to_string());
+
         self.channels.insert(channel_id, channel.clone());
 
         channel
@@ -176,51 +178,32 @@ impl ServerState {
     }
 
     async fn handle_client_left_channel(&self, client_session: u32, leave_channel_id: u32) -> Option<u32> {
-        // TODO: remove this iteration over every channel and just block the channel delete if the
-        // parent id is none
-        for channel in self.channels.iter() {
-            {
-                // don't remove root channel
-                if channel.parent_id == Some(leave_channel_id) {
-                    return None;
-                }
-            }
-        }
-
         if let Some(channel) = self.channels.get(&leave_channel_id) {
             // remove the client from the channel
             channel.clients.remove(&client_session);
-            // TODO: Test that this works properly
-            // if channel.parent_id.is_none() { return None };
-            {
-                if channel.temporary && channel.get_clients().is_empty() {
-                    // Broadcast channel remove
-                    let mut channel_remove = ChannelRemove::new();
-                    channel_remove.set_channel_id(leave_channel_id);
 
-                    match self.broadcast_message(MessageKind::ChannelRemove, &channel_remove).await {
-                        Ok(_) => (),
-                        Err(e) => tracing::error!("failed to send channel remove: {:?}", e),
-                    }
+            if channel.parent_id.is_none() {
+                println!("channel {} had no parent, could be root", channel.id);
+                return None;
+            };
 
-                    self.channels.remove(&channel.id);
-
-                    return Some(leave_channel_id);
-                }
-            }
-
-            return None;
+            // if the channel isn't temporary then we want to keep it
+            if !channel.temporary || !channel.get_clients().is_empty() {
+                return None;
+            };
         }
 
         // Broadcast channel remove
-        // TODO: Figure out why this is needed? This shouldn't be able to get hit
         let mut channel_remove = ChannelRemove::new();
         channel_remove.set_channel_id(leave_channel_id);
+
+        self.channels.remove(&leave_channel_id);
 
         match self.broadcast_message(MessageKind::ChannelRemove, &channel_remove).await {
             Ok(_) => (),
             Err(e) => tracing::error!("failed to send channel remove: {:?}", e),
         }
+
 
         Some(leave_channel_id)
     }

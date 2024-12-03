@@ -33,34 +33,31 @@ impl Handler for ChannelState {
 
         let name = self.get_name();
 
-        if !{ state.channels.contains_key(&self.get_parent()) } {
+        if name.len() > 512 {
+            return Ok(());
+        }
+
+        if !state.channels.contains_key(&self.get_parent()) {
             tracing::warn!("cannot create channel: parent channel does not exist");
 
             return Ok(());
         }
 
-        let existing_channel = { state.get_channel_by_name(name).await? };
+        let existing_channel = state.get_channel_by_name(name).await?;
+        if existing_channel.is_some() {
 
-        let new_channel_id = if let Some(channel) = existing_channel {
-            let channel_state = { channel.get_channel_state() };
+            return Ok(());
+        }
 
-            {
-                client.send_message(MessageKind::ChannelState, channel_state.as_ref()).await?;
-            }
+        let channel = { state.add_channel(self) };
+        let channel_state = { channel.get_channel_state() };
 
-            channel
-        } else {
-            let channel = { state.add_channel(self) };
-            let channel_state = { channel.get_channel_state() };
+        {
+            tracing::debug!("Created channel {}, requested by {}", channel.id, client.session_id);
+            state.broadcast_message(MessageKind::ChannelState, channel_state.as_ref()).await?;
+        }
 
-            {
-                state.broadcast_message(MessageKind::ChannelState, channel_state.as_ref()).await?;
-            }
-
-            channel
-        };
-
-        state.set_client_channel(client, new_channel_id).await;
+        state.set_client_channel(client, channel).await;
 
         Ok(())
     }
