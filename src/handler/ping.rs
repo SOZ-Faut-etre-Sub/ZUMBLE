@@ -4,10 +4,8 @@ use crate::handler::Handler;
 use crate::proto::mumble::Ping;
 use crate::proto::MessageKind;
 use crate::state::ServerStateRef;
-use async_trait::async_trait;
 use std::time::Instant;
 
-#[async_trait]
 impl Handler for Ping {
     async fn handle(&self, _state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         let mut ping = Ping::default();

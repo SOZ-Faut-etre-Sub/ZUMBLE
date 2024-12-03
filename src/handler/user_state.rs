@@ -3,9 +3,7 @@ use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::UserState;
 use crate::state::ServerStateRef;
-use async_trait::async_trait;
 
-#[async_trait]
 impl Handler for UserState {
     async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         let session_id = { client.session_id };
