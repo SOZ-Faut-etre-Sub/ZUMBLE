@@ -73,7 +73,7 @@ impl Client {
         publisher: Sender<ClientMessage>,
     ) -> Self {
         // let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
-        let targets: [Arc<VoiceTarget>; 30] = core::array::from_fn(|v| Arc::new(VoiceTarget::default()));
+        let targets: [Arc<VoiceTarget>; 30] = core::array::from_fn(|_v| Arc::new(VoiceTarget::default()));
 
         Self {
             // version,
