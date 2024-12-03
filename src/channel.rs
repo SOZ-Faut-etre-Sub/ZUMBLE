@@ -45,11 +45,11 @@ impl Channel {
     }
 
     pub fn get_channel_state(&self) -> Arc<ChannelState> {
-        return self.channel_state_cache.clone();
+        self.channel_state_cache.clone()
     }
 
     pub fn get_listeners(&self) -> Arc<DashMap<u32, ClientRef>> {
-        return self.listeners.clone();
+        self.listeners.clone()
     }
 
     pub fn get_clients(&self) -> Arc<DashMap<u32, ClientRef>> {

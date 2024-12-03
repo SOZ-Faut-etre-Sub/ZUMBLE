@@ -110,11 +110,11 @@ impl Client {
     }
 
     pub fn is_muted(&self) -> bool {
-        return self.mute.load(Ordering::Relaxed);
+        self.mute.load(Ordering::Relaxed)
     }
 
     pub fn is_deaf(&self) -> bool {
-        return self.deaf.load(Ordering::Relaxed);
+        self.deaf.load(Ordering::Relaxed)
     }
 
     pub fn mute(&self, mute: bool) {

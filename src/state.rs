@@ -305,10 +305,7 @@ impl ServerState {
     }
 
     pub fn get_client_by_socket(&self, socket_addr: &SocketAddr) -> Option<ClientRef> {
-        match self.clients_by_socket.get(socket_addr) {
-            Some(client) => Some(client.clone()),
-            None => None,
-        }
+        self.clients_by_socket.get(socket_addr).map(|client| client.clone())
     }
 
     pub fn remove_client_by_socket(&self, socket_addr: &SocketAddr) {
