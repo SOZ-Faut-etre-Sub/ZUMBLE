@@ -14,7 +14,7 @@ pub async fn post_mute(mute: web::Json<Mute>, state: web::Data<ServerStateRef>) 
 
     Ok(match client {
         Some(client) => {
-            client.mute(mute.mute);
+            client.set_mute(mute.mute);
 
             HttpResponse::Ok().finish()
         }

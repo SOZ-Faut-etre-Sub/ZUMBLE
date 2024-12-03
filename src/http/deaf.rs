@@ -14,7 +14,7 @@ pub async fn post_deaf(deaf: web::Json<Deaf>, state: web::Data<ServerStateRef>) 
 
     Ok(match client {
         Some(client) => {
-            client.deaf(deaf.deaf);
+            client.set_deaf(deaf.deaf);
 
             HttpResponse::Ok().finish()
         }
