@@ -14,7 +14,6 @@ mod metrics;
 mod proto;
 mod server;
 mod state;
-mod sync;
 mod target;
 mod varint;
 mod voice;

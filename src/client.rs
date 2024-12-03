@@ -7,7 +7,6 @@ use crate::state::ServerStateRef;
 use crate::target::VoiceTarget;
 use crate::voice::{encode_voice_packet, Clientbound, VoicePacket};
 use bytes::BytesMut;
-use protobuf::reflect::ProtobufValue;
 use protobuf::Message;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -23,17 +22,17 @@ use tokio_rustls::server::TlsStream;
 pub type ClientRef = Arc<Client>;
 
 pub struct Client {
-    pub version: Version,
+    // pub version: Version,
     pub authenticate: Authenticate,
     pub session_id: u32,
     pub channel_id: AtomicU32,
     pub mute: AtomicBool,
     pub deaf: AtomicBool,
     pub write: RwLock<WriteHalf<TlsStream<TcpStream>>>,
-    pub tokens: Vec<String>,
+    // pub tokens: Vec<String>,
     pub crypt_state: Arc<RwLock<CryptState>>,
     pub udp_socket_addr: RwLock<Option<SocketAddr>>,
-    pub use_opus: bool,
+    // pub use_opus: bool,
     pub codecs: Vec<i32>,
     pub udp_socket: Arc<UdpSocket>,
     pub publisher: Sender<ClientMessage>,
@@ -64,7 +63,7 @@ impl Client {
     }
 
     pub fn new(
-        version: Version,
+        _version: Version,
         authenticate: Authenticate,
         session_id: u32,
         channel_id: u32,
@@ -73,21 +72,21 @@ impl Client {
         udp_socket: Arc<UdpSocket>,
         publisher: Sender<ClientMessage>,
     ) -> Self {
-        let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
+        // let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
         let mut targets = Vec::with_capacity(30);
         targets.resize_with(30, Default::default);
 
         Self {
-            version,
+            // version,
             session_id,
             channel_id: AtomicU32::new(channel_id),
             crypt_state: Arc::new(RwLock::new(crypt_state)),
             write: RwLock::new(write),
-            tokens,
+            // tokens,
             deaf: AtomicBool::new(false),
             mute: AtomicBool::new(false),
             udp_socket_addr: RwLock::new(None),
-            use_opus: if authenticate.has_opus() { authenticate.get_opus() } else { false },
+            // use_opus: if authenticate.has_opus() { authenticate.get_opus() } else { false },
             codecs: authenticate.get_celt_versions().to_vec(),
             authenticate,
             udp_socket,
