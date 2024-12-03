@@ -1,12 +1,13 @@
 use crate::error::MumbleError;
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::ServerState;
 use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::RwLock;
 
 #[derive(Serialize, Deserialize)]
 pub struct MumbleClient {
@@ -29,56 +30,50 @@ pub struct MumbleTarget {
 }
 
 #[actix_web::get("/status")]
-pub async fn get_status(state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
+pub async fn get_status(state: web::Data<ServerStateRef>) -> Result<HttpResponse, MumbleError> {
     let mut clients = HashMap::new();
-    let sessions = { state.read_err().await?.clients.keys().cloned().collect::<Vec<u32>>() };
+    for client in state.clients.iter() {
+        let session = client.session_id;
+        let channel_id = { client.channel_id.load(Ordering::Relaxed) };
+        let channel = { state.channels.get(&channel_id) };
+        let channel_name = {
+            if let Some(channel) = channel {
+                Some(channel.name.clone())
+            } else {
+                None
+            }
+        };
 
-    for session in sessions {
-        let client = { state.read_err().await?.clients.get(&session).cloned() };
+        {
+            let crypt_state = client.crypt_state.read().await;
 
-        if let Some(client) = client {
-            let channel_id = { client.read_err().await?.channel_id.load(Ordering::Relaxed) };
-            let channel = { state.read_err().await?.channels.get(&channel_id).cloned() };
-            let channel_name = {
-                if let Some(channel) = channel {
-                    Some(channel.read_err().await?.name.clone())
-                } else {
-                    None
-                }
+            let mut mumble_client = MumbleClient {
+                name: client.authenticate.get_username().to_string(),
+                session_id: client.session_id,
+                channel: channel_name,
+                mute: client.is_muted(),
+                good: crypt_state.good,
+                late: crypt_state.late,
+                lost: crypt_state.lost,
+                resync: crypt_state.resync,
+                last_good_duration: Instant::now().duration_since(crypt_state.last_good).as_millis(),
+                targets: Vec::new(),
             };
 
-            {
-                let client_read = client.read_err().await?;
-                let crypt_state = client_read.crypt_state.read_err().await?;
+            for target in &client.targets {
+                let mumble_target = {
+                    let target_read = target.read().await;
 
-                let mut mumble_client = MumbleClient {
-                    name: client_read.authenticate.get_username().to_string(),
-                    session_id: client_read.session_id,
-                    channel: channel_name,
-                    mute: client_read.mute,
-                    good: crypt_state.good,
-                    late: crypt_state.late,
-                    lost: crypt_state.lost,
-                    resync: crypt_state.resync,
-                    last_good_duration: Instant::now().duration_since(crypt_state.last_good).as_millis(),
-                    targets: Vec::new(),
+                    MumbleTarget {
+                        sessions: target_read.sessions.clone(),
+                        channels: target_read.channels.clone(),
+                    }
                 };
 
-                for target in &client_read.targets {
-                    let mumble_target = {
-                        let target_read = target.read_err().await?;
-
-                        MumbleTarget {
-                            sessions: target_read.sessions.clone(),
-                            channels: target_read.channels.clone(),
-                        }
-                    };
-
-                    mumble_client.targets.push(mumble_target);
-                }
-
-                clients.insert(session, mumble_client);
+                mumble_client.targets.push(mumble_target);
             }
+
+            clients.insert(session, mumble_client);
         }
     }
 

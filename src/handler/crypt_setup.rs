@@ -1,25 +1,20 @@
-use crate::client::Client;
+use crate::client::{Client, ClientRef};
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::CryptSetup;
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::ServerState;
 use async_trait::async_trait;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[async_trait]
 impl Handler for CryptSetup {
-    async fn handle(&self, _state: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
+    async fn handle(&self, _state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         if self.has_client_nonce() {
-            client
-                .read_err()
-                .await?
-                .crypt_state
-                .write_err()
-                .await?
-                .set_decrypt_nonce(self.get_client_nonce());
+            client.crypt_state.write().await.set_decrypt_nonce(self.get_client_nonce());
         } else {
-            client.read_err().await?.send_crypt_setup(false).await?;
+            client.send_crypt_setup(false).await?;
         }
 
         Ok(())

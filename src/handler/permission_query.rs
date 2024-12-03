@@ -1,12 +1,13 @@
-use crate::client::Client;
+use crate::client::{Client, ClientRef};
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::PermissionQuery;
 use crate::proto::MessageKind;
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::ServerState;
 use async_trait::async_trait;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 // const PERM_NONE: u32 = 0x0;
 // const PERM_WRITE: u32 = 0x1;
@@ -33,13 +34,13 @@ const PERM_ADMIN: u32 = PERM_DEFAULT | PERM_MUTEDEAFEN | PERM_MOVE | PERM_KICK |
 
 #[async_trait]
 impl Handler for PermissionQuery {
-    async fn handle(&self, _state: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
+    async fn handle(&self, _state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         let mut pq = PermissionQuery::new();
         pq.set_channel_id(self.get_channel_id());
         pq.set_permissions(PERM_ADMIN);
 
         {
-            client.read_err().await?.send_message(MessageKind::PermissionQuery, &pq).await?;
+            client.send_message(MessageKind::PermissionQuery, &pq).await?;
         }
 
         Ok(())

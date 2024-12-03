@@ -1,9 +1,9 @@
-use crate::client::Client;
+use crate::client::{Client, ClientRef};
 use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
 use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::ServerState;
 use actix_server::Server;
 use actix_service::fn_service;
@@ -14,14 +14,10 @@ use tokio::io::ReadHalf;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::RwLock;
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
 
-pub fn create_tcp_server(
-    tcp_listener: TcpListener,
-    acceptor: TlsAcceptor,
-    server_version: Version,
-    state: Arc<RwLock<ServerState>>,
-) -> Server {
+pub fn create_tcp_server(tcp_listener: TcpListener, acceptor: TlsAcceptor, server_version: Version, state: ServerStateRef) -> Server {
     Server::build()
         .listen(
             "mumble-tcp",
@@ -51,9 +47,12 @@ pub fn create_tcp_server(
         .run()
 }
 
-async fn handle_new_client(acceptor: TlsAcceptor,
-                     server_version: Version,
-                     state: Arc<RwLock<ServerState>>, stream: TcpStream) -> Result<(), anyhow::Error> {
+async fn handle_new_client(
+    acceptor: TlsAcceptor,
+    server_version: Version,
+    state: ServerStateRef,
+    stream: TcpStream,
+) -> Result<(), anyhow::Error> {
     stream.set_nodelay(true).context("set stream no delay")?;
 
     let mut stream = acceptor.accept(stream).await.context("accept tls")?;
@@ -63,15 +62,7 @@ async fn handle_new_client(acceptor: TlsAcceptor,
     let (tx, rx) = mpsc::channel(128);
 
     let username = authenticate.get_username().to_string();
-    let client = {
-        state.write_err().await.context("add client to server")?.add_client(
-            version,
-            authenticate,
-            crypt_state,
-            write,
-            tx,
-        )
-    };
+    let client = { state.add_client(version, authenticate, crypt_state, write, tx) };
 
     crate::metrics::CLIENTS_TOTAL.inc();
 
@@ -84,19 +75,12 @@ async fn handle_new_client(acceptor: TlsAcceptor,
 
     tracing::info!("client {} disconnected", username);
 
-    let (client_id, channel_id) = {
-        state.write_err().await.context("wait state for disconnect user")?.disconnect(client).await.context("disconnect user")?
-    };
+    let (client_id, channel_id) = { state.disconnect(client).await.context("disconnect user")? };
 
     crate::metrics::CLIENTS_TOTAL.dec();
 
     {
-        state
-            .read_err()
-            .await
-            .context("wait state for remove client")?
-            .remove_client(client_id, channel_id)
-            .await.context("remove client")?;
+        state.remove_client(client_id, channel_id).await;
     }
 
     Ok(())
@@ -105,38 +89,32 @@ async fn handle_new_client(acceptor: TlsAcceptor,
 pub async fn client_run(
     mut read: ReadHalf<TlsStream<TcpStream>>,
     mut receiver: Receiver<ClientMessage>,
-    state: Arc<RwLock<ServerState>>,
-    client: Arc<RwLock<Client>>,
+    state: ServerStateRef,
+    client: ClientRef,
 ) -> Result<(), anyhow::Error> {
-    let codec_version = { state.read_err().await?.check_codec().await? };
+    let codec_version = { state.check_codec().await? };
 
     if let Some(codec_version) = codec_version {
         {
-            client
-                .read_err()
-                .await?
-                .send_message(MessageKind::CodecVersion, &codec_version)
-                .await?;
+            client.send_message(MessageKind::CodecVersion, &codec_version).await?;
         }
     }
 
     {
-        let client_sync = client.read_err().await?;
-
-        client_sync.sync_client_and_channels(&state).await.map_err(|e| {
+        client.sync_client_and_channels(&state).await.map_err(|e| {
             tracing::error!("init client error during channel sync: {:?}", e);
 
             e
         })?;
-        client_sync.send_my_user_state().await?;
-        client_sync.send_server_sync().await?;
-        client_sync.send_server_config().await?;
+        client.send_my_user_state().await?;
+        client.send_server_sync().await?;
+        client.send_server_config().await?;
     }
 
-    let user_state = { client.read_err().await?.get_user_state() };
+    let user_state = { client.get_user_state() };
 
     {
-        match state.read_err().await?.broadcast_message(MessageKind::UserState, &user_state).await {
+        match state.broadcast_message(MessageKind::UserState, &user_state).await {
             Ok(_) => (),
             Err(e) => tracing::error!("failed to send user state: {:?}", e),
         }
