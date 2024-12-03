@@ -16,13 +16,11 @@ use crate::proto::MessageKind;
 use crate::state::ServerStateRef;
 use crate::voice::{decode_voice_packet, ServerBound};
 use anyhow::Context;
-use async_trait::async_trait;
 use bytes::BytesMut;
 use protobuf::Message;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::Receiver;
 
-#[async_trait]
 pub trait Handler {
     async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError>;
 }

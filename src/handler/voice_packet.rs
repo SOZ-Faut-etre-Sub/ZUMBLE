@@ -4,11 +4,9 @@ use crate::handler::Handler;
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
 use crate::voice::{ClientBound, VoicePacket};
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
-#[async_trait]
 impl Handler for VoicePacket<ClientBound> {
     async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         let mute = client.is_muted();

@@ -4,9 +4,7 @@ use crate::handler::Handler;
 use crate::proto::mumble::ChannelState;
 use crate::proto::MessageKind;
 use crate::state::ServerStateRef;
-use async_trait::async_trait;
 
-#[async_trait]
 impl Handler for ChannelState {
     async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         if self.has_channel_id() {

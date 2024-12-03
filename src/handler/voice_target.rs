@@ -3,10 +3,8 @@ use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::VoiceTarget;
 use crate::state::ServerStateRef;
-use async_trait::async_trait;
 use std::collections::HashSet;
 
-#[async_trait]
 impl Handler for VoiceTarget {
     async fn handle(&self, _: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         // mumble spec limits the usable voice targets to 1..=30
