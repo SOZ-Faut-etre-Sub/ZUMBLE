@@ -5,7 +5,7 @@ use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ChannelRemove, ChannelState, CodecVersion, UserRemove, Version};
 use crate::proto::{message_to_bytes, MessageKind};
-use crate::voice::{Serverbound, VoicePacket};
+use crate::voice::{ServerBound, VoicePacket};
 use bytes::BytesMut;
 use dashmap::DashMap;
 use protobuf::Message;
@@ -315,7 +315,7 @@ impl ServerState {
     pub async fn find_client_for_packet(
         &self,
         bytes: &mut BytesMut,
-    ) -> Result<(Option<ClientRef>, Option<VoicePacket<Serverbound>>, Vec<SocketAddr>), MumbleError> {
+    ) -> Result<(Option<ClientRef>, Option<VoicePacket<ServerBound>>, Vec<SocketAddr>), MumbleError> {
         let mut address_to_remove = Vec::new();
 
         for c in self.clients.iter() {

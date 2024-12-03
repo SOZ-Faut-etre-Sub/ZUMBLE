@@ -64,10 +64,10 @@ pub enum VoicePacketPayload {
 
 /// Zero-sized struct indicating server-bound packet direction.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Serverbound;
+pub struct ServerBound;
 /// Zero-sized struct indicating client-bound packet direction.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Clientbound;
+pub struct ClientBound;
 
 /// Sealed trait for indicating voice packet direction.
 ///
@@ -81,7 +81,7 @@ pub trait VoicePacketDst: Default + PartialEq {
     fn write_session_id(buf: &mut BytesMut, session_id: &Self::SessionId);
 }
 
-impl VoicePacketDst for Serverbound {
+impl VoicePacketDst for ServerBound {
     type SessionId = ();
 
     fn read_session_id<T: Read + Sized>(_buf: &mut T) -> Result<Self::SessionId, io::Error> {
@@ -91,7 +91,7 @@ impl VoicePacketDst for Serverbound {
     fn write_session_id(_buf: &mut BytesMut, _session_id: &Self::SessionId) {}
 }
 
-impl VoicePacketDst for Clientbound {
+impl VoicePacketDst for ClientBound {
     type SessionId = u32;
 
     fn read_session_id<T: Read + Sized>(buf: &mut T) -> Result<Self::SessionId, io::Error> {
@@ -103,8 +103,8 @@ impl VoicePacketDst for Clientbound {
     }
 }
 
-impl VoicePacket<Serverbound> {
-    pub fn into_client_bound(self, session_id: u32) -> VoicePacket<Clientbound> {
+impl VoicePacket<ServerBound> {
+    pub fn into_client_bound(self, session_id: u32) -> VoicePacket<ClientBound> {
         match self {
             VoicePacket::Ping { timestamp } => VoicePacket::Ping { timestamp },
             VoicePacket::Audio {

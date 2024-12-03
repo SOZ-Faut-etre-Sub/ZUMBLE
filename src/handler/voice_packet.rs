@@ -3,13 +3,13 @@ use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
-use crate::voice::{Clientbound, VoicePacket};
+use crate::voice::{ClientBound, VoicePacket};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 #[async_trait]
-impl Handler for VoicePacket<Clientbound> {
+impl Handler for VoicePacket<ClientBound> {
     async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         let mute = client.is_muted();
 
@@ -17,7 +17,7 @@ impl Handler for VoicePacket<Clientbound> {
             return Ok(());
         }
 
-        if let VoicePacket::<Clientbound>::Audio { target, session_id, .. } = self {
+        if let VoicePacket::<ClientBound>::Audio { target, session_id, .. } = self {
             let mut listening_clients = HashMap::new();
 
             match *target {

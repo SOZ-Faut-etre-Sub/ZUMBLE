@@ -14,7 +14,7 @@ use crate::message::ClientMessage;
 use crate::proto::mumble;
 use crate::proto::MessageKind;
 use crate::state::ServerStateRef;
-use crate::voice::{decode_voice_packet, Serverbound};
+use crate::voice::{decode_voice_packet, ServerBound};
 use anyhow::Context;
 use async_trait::async_trait;
 use bytes::BytesMut;
@@ -70,7 +70,7 @@ impl MessageHandler {
                     MessageKind::UDPTunnel => {
                         let mut bytes = BytesMut::from(buf.as_slice());
 
-                        let voice_packet = match decode_voice_packet::<Serverbound>(&mut bytes) {
+                        let voice_packet = match decode_voice_packet::<ServerBound>(&mut bytes) {
                             Ok(voice_packet) => voice_packet,
                             Err(e) => {
                                 tracing::error!("error decoding voice packet: {}", e);

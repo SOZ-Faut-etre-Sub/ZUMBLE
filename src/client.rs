@@ -5,7 +5,7 @@ use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UDPTunnel, Us
 use crate::proto::{expected_message, message_to_bytes, send_message, MessageKind};
 use crate::state::ServerStateRef;
 use crate::target::VoiceTarget;
-use crate::voice::{encode_voice_packet, Clientbound, VoicePacket};
+use crate::voice::{encode_voice_packet, ClientBound, VoicePacket};
 use bytes::BytesMut;
 use protobuf::Message;
 use std::net::SocketAddr;
@@ -203,7 +203,7 @@ impl Client {
         self.send_message(MessageKind::ServerConfig, &server_config).await
     }
 
-    pub async fn send_voice_packet(&self, packet: VoicePacket<Clientbound>) -> Result<(), MumbleError> {
+    pub async fn send_voice_packet(&self, packet: VoicePacket<ClientBound>) -> Result<(), MumbleError> {
         if let Some(addr) = *self.udp_socket_addr.read().await {
             let mut dest = BytesMut::new();
             self.crypt_state.write().await.encrypt(&packet, &mut dest);
