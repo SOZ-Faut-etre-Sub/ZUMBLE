@@ -3,11 +3,12 @@ use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
 use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
+use crate::server::constants::{MAX_CLIENTS, MAX_MTU};
 use crate::state::ServerStateRef;
 use actix_server::Server;
 use actix_service::fn_service;
-use anyhow::Context;
-use tokio::io;
+use anyhow::{anyhow, Context};
+use tokio::io::{self};
 use tokio::io::ReadHalf;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -50,13 +51,20 @@ async fn handle_new_client(
     state: ServerStateRef,
     stream: TcpStream,
 ) -> Result<(), anyhow::Error> {
+    let cur_clients = state.clients.len();
+    if cur_clients >= (MAX_CLIENTS as usize) {
+        return Err(anyhow!("{:?} tried to join but the server is at maximum capacity ({}/{})", stream.peer_addr(), cur_clients, MAX_CLIENTS));
+    }
+
     stream.set_nodelay(true).context("set stream no delay")?;
 
     let mut stream = acceptor.accept(stream).await.context("accept tls")?;
+
+
     let (version, authenticate, crypt_state) = Client::init(&mut stream, server_version).await.context("init client")?;
 
     let (read, write) = io::split(stream);
-    let (tx, rx) = mpsc::channel(128);
+    let (tx, rx) = mpsc::channel(MAX_MTU);
 
     let username = authenticate.get_username().to_string();
     let client = { state.add_client(version, authenticate, crypt_state, write, tx) };

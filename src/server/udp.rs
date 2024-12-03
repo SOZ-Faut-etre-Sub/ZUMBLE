@@ -9,6 +9,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 
+use super::constants::{MAX_BANDWIDTH, MAX_CLIENTS};
+
 pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef) {
     loop {
         match udp_server_run(protocol_version, socket.clone(), state.clone()).await {
@@ -33,8 +35,6 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Se
     Ok(())
 }
 
-const MAX_PLAYERS: u32 = 2048;
-pub const MAX_BANDWIDTH_PER_PLAYER: u32 = 144000;
 
 async fn handle_packet(
     mut buffer: BytesMut,
@@ -60,9 +60,9 @@ async fn handle_packet(
         // user count
         send.write_u32::<byteorder::BigEndian>(state.clients.len() as u32)?;
         // max user count
-        send.write_u32::<byteorder::BigEndian>(MAX_PLAYERS)?;
+        send.write_u32::<byteorder::BigEndian>(MAX_CLIENTS)?;
         // max bandwidth per user
-        send.write_u32::<byteorder::BigEndian>(MAX_BANDWIDTH_PER_PLAYER)?;
+        send.write_u32::<byteorder::BigEndian>(MAX_BANDWIDTH)?;
 
         socket.send_to(send.get_ref().as_slice(), addr).await?;
 
