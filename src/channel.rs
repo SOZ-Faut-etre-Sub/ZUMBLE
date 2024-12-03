@@ -1,12 +1,7 @@
 use dashmap::DashMap;
-use tokio::sync::RwLock;
 
-use crate::client::{Client, ClientRef};
+use crate::client::{ClientRef};
 use crate::proto::mumble::ChannelState;
-use crate::state::ServerStateRef;
-use crate::ServerState;
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 pub type ChannelRef = Arc<Channel>;

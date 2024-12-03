@@ -1,13 +1,10 @@
 use crate::error::MumbleError;
 use crate::state::ServerStateRef;
-use crate::ServerState;
 use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::RwLock;
 
 #[derive(Serialize, Deserialize)]
 pub struct MumbleClient {

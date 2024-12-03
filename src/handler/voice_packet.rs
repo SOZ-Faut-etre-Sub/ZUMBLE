@@ -1,15 +1,12 @@
-use crate::client::{Client, ClientRef};
+use crate::client::{ClientRef};
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
 use crate::voice::{Clientbound, VoicePacket};
-use crate::ServerState;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 #[async_trait]
 impl Handler for VoicePacket<Clientbound> {

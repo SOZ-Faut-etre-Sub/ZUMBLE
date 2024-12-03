@@ -8,7 +8,6 @@ mod version;
 mod voice_packet;
 mod voice_target;
 
-use crate::client::Client;
 use crate::client::ClientRef;
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
@@ -16,15 +15,12 @@ use crate::proto::mumble;
 use crate::proto::MessageKind;
 use crate::state::ServerStateRef;
 use crate::voice::{decode_voice_packet, Serverbound};
-use crate::ServerState;
 use anyhow::Context;
 use async_trait::async_trait;
 use bytes::BytesMut;
 use protobuf::Message;
-use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::RwLock;
 
 #[async_trait]
 pub trait Handler {

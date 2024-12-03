@@ -2,14 +2,12 @@ use crate::error::DecryptError;
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
 use crate::voice::VoicePacket;
-use crate::ServerState;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
-use tokio::sync::RwLock;
 
 pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef) {
     loop {
