@@ -3,19 +3,20 @@ mod metrics;
 mod mute;
 mod status;
 
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::ServerState;
 use actix_server::Server;
 use actix_web::middleware::Condition;
 use actix_web::{middleware, web, App, HttpServer};
 use actix_web_httpauth::{extractors::AuthenticationError, headers::www_authenticate::basic::Basic, middleware::HttpAuthentication};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub fn create_http_server(
     listen: String,
     tls_config: rustls::ServerConfig,
     use_tls: bool,
-    state: Arc<RwLock<ServerState>>,
+    state: ServerStateRef,
     user: String,
     password: Option<String>,
     log_requests: bool,
@@ -32,7 +33,7 @@ pub fn create_http_server(
                 let password = password.clone();
 
                 if password.is_none() {
-                    return Err((AuthenticationError::new(Basic::with_realm("Restricted area")).into(), req))
+                    return Err((AuthenticationError::new(Basic::with_realm("Restricted area")).into(), req));
                 }
 
                 let user = user.clone();

@@ -1,11 +1,12 @@
+use tokio::sync::RwLock;
+
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
-use crate::state::ServerState;
-use crate::sync::RwLock;
+use crate::state::{ServerState, ServerStateRef};
 use std::sync::Arc;
 use std::time::Instant;
 
-pub async fn clean_loop(state: Arc<RwLock<ServerState>>) {
+pub async fn clean_loop(state: ServerStateRef) {
     loop {
         tracing::trace!("cleaning clients");
 
@@ -20,13 +21,13 @@ pub async fn clean_loop(state: Arc<RwLock<ServerState>>) {
     }
 }
 
-async fn clean_run(state: Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
+async fn clean_run(state: ServerStateRef) -> Result<(), MumbleError> {
     let mut client_to_delete = Vec::new();
     let mut client_to_disconnect = Vec::new();
 
     {
-        for client in state.read_err().await?.clients.values() {
-            if client.read_err().await?.publisher.is_closed() {
+        for client in state.clients.iter() {
+            if client.publisher.is_closed() {
                 client_to_disconnect.push(client.clone());
 
                 continue;
@@ -34,7 +35,7 @@ async fn clean_run(state: Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
 
             let now = Instant::now();
 
-            let duration = { now.duration_since(*client.read_err().await?.last_ping.read_err().await?) };
+            let duration = { now.duration_since(*client.last_ping.read().await) };
 
             if duration.as_secs() > 60 {
                 client_to_delete.push(client.clone());
@@ -44,9 +45,9 @@ async fn clean_run(state: Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
 
     for client in client_to_delete {
         {
-            let username = { client.read_err().await?.authenticate.get_username().to_string() };
+            let username = { client.authenticate.get_username().to_string() };
 
-            match client.read_err().await?.publisher.try_send(ClientMessage::Disconnect) {
+            match client.publisher.try_send(ClientMessage::Disconnect) {
                 Ok(_) => (),
                 Err(err) => {
                     tracing::error!("error sending disconnect signal to {}: {}", username, err);
@@ -56,12 +57,12 @@ async fn clean_run(state: Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
     }
 
     for client in client_to_disconnect {
-        let (user_id, channel_id) = { state.write_err().await?.disconnect(client).await? };
+        let (user_id, channel_id) = { state.disconnect(client).await? };
 
         crate::metrics::CLIENTS_TOTAL.dec();
 
         {
-            state.read_err().await?.remove_client(user_id, channel_id).await?;
+            state.remove_client(user_id, channel_id).await?;
         }
     }
 

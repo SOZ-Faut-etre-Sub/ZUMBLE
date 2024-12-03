@@ -9,11 +9,12 @@ mod voice_packet;
 mod voice_target;
 
 use crate::client::Client;
+use crate::client::ClientRef;
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::proto::mumble;
 use crate::proto::MessageKind;
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::voice::{decode_voice_packet, Serverbound};
 use crate::ServerState;
 use anyhow::Context;
@@ -23,26 +24,20 @@ use protobuf::Message;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::RwLock;
 
 #[async_trait]
 pub trait Handler {
-    async fn handle(&self, state: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError>;
+    async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError>;
 }
 
 pub struct MessageHandler;
 
 impl MessageHandler {
-    async fn try_handle<T: Message + Handler>(
-        buf: &[u8],
-        state: Arc<RwLock<ServerState>>,
-        client: Arc<RwLock<Client>>,
-    ) -> Result<(), MumbleError> {
+    async fn try_handle<T: Message + Handler>(buf: &[u8], state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         let message = T::parse_from_bytes(buf)?;
 
-        let (username, client_id) = {
-            let client = client.read_err().await?;
-            (client.authenticate.get_username().to_string(), client.session_id)
-        };
+        let (username, client_id) = { (client.authenticate.get_username().to_string(), client.session_id) };
 
         tracing::trace!(
             "[{}] [{}] handle message: {:?}, {:?}",
@@ -59,8 +54,8 @@ impl MessageHandler {
     pub async fn handle<S: AsyncRead + Unpin>(
         stream: &mut S,
         consumer: &mut Receiver<ClientMessage>,
-        state: Arc<RwLock<ServerState>>,
-        client: Arc<RwLock<Client>>,
+        state: ServerStateRef,
+        client: ClientRef,
     ) -> Result<(), anyhow::Error> {
         tokio::select! {
             kind_read = stream.read_u16() => {
@@ -88,7 +83,7 @@ impl MessageHandler {
                             }
                         };
 
-                        let output_voice_packet = { voice_packet.into_client_bound(client.read_err().await?.session_id) };
+                        let output_voice_packet = { voice_packet.into_client_bound(client.session_id) };
 
                         output_voice_packet.handle(state, client).await.context("kind: UDPTunnel")
                     }
@@ -112,10 +107,10 @@ impl MessageHandler {
                         packet.handle(state, client).await.context("handle voice packet")
                     },
                     Some(ClientMessage::SendVoicePacket(packet)) => {
-                        client.read_err().await?.send_voice_packet(packet).await.context("send voice packet")
+                        client.send_voice_packet(packet).await.context("send voice packet")
                     },
                     Some(ClientMessage::SendMessage { kind, payload }) => {
-                        client.read_err().await?.send(payload.as_ref()).await.context(format!("send message of type: {}", kind))
+                        client.send(payload.as_ref()).await.context(format!("send message of type: {}", kind))
                     },
                     Some(ClientMessage::Disconnect) => {
                         Err(MumbleError::ForceDisconnect).context("force disconnect")

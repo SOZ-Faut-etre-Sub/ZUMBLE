@@ -1,22 +1,23 @@
-use crate::channel::Channel;
-use crate::client::Client;
+use crate::channel::{Channel, ChannelRef};
+use crate::client::{Client, ClientRef};
 use crate::crypt::CryptState;
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ChannelRemove, ChannelState, CodecVersion, UserRemove, Version};
 use crate::proto::{message_to_bytes, MessageKind};
-use crate::sync::RwLock;
 use crate::voice::{Serverbound, VoicePacket};
 use bytes::BytesMut;
+use dashmap::DashMap;
 use protobuf::Message;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
+use tokio::sync::RwLock;
 use tokio_rustls::server::TlsStream;
 
 pub struct CodecState {
@@ -57,48 +58,44 @@ impl CodecState {
     }
 }
 
+pub type ServerStateRef = Arc<ServerState>;
+
 pub struct ServerState {
-    pub clients: HashMap<u32, Arc<RwLock<Client>>>,
-    pub clients_by_socket: HashMap<SocketAddr, Arc<RwLock<Client>>>,
-    pub channels: HashMap<u32, Arc<RwLock<Channel>>>,
-    pub codec_state: RwLock<CodecState>,
+    pub clients: Arc<DashMap<u32, ClientRef>>,
+    pub clients_by_socket: Arc<DashMap<SocketAddr, ClientRef>>,
+    pub channels: DashMap<u32, Arc<Channel>>,
+    pub codec_state: Arc<RwLock<CodecState>>,
     pub socket: Arc<UdpSocket>,
 }
 
 impl ServerState {
     pub fn new(socket: Arc<UdpSocket>) -> Self {
-        let mut channels = HashMap::new();
+        let mut channels = DashMap::new();
         channels.insert(
             0,
-            Arc::new(RwLock::new(Channel::new(
-                0,
-                Some(0),
-                "Root".to_string(),
-                "Root channel".to_string(),
-                false,
-            ))),
+            Arc::new(Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false)),
         );
 
         Self {
-            clients: HashMap::new(),
-            clients_by_socket: HashMap::new(),
+            clients: Arc::new(DashMap::new()),
+            clients_by_socket: Arc::new(DashMap::new()),
             channels,
-            codec_state: RwLock::new(CodecState::default()),
+            codec_state: Arc::new(RwLock::new(CodecState::default())),
             socket,
         }
     }
 
     pub fn add_client(
-        &mut self,
+        &self,
         version: Version,
         authenticate: Authenticate,
         crypt_state: CryptState,
         write: WriteHalf<TlsStream<TcpStream>>,
         publisher: Sender<ClientMessage>,
-    ) -> Arc<RwLock<Client>> {
+    ) -> ClientRef {
         let session_id = self.get_free_session_id();
 
-        let client = Arc::new(RwLock::new(Client::new(
+        let client = Arc::new(Client::new(
             version,
             authenticate,
             session_id,
@@ -107,58 +104,53 @@ impl ServerState {
             write,
             self.socket.clone(),
             publisher,
-        )));
+        ));
 
         self.clients.insert(session_id, client.clone());
 
         client
     }
 
-    pub fn add_channel(&mut self, state: &ChannelState) -> Arc<RwLock<Channel>> {
+    pub fn add_channel(&self, state: &ChannelState) -> ChannelRef {
         let channel_id = self.get_free_channel_id();
-        let channel = Arc::new(RwLock::new(Channel::new(
+        let channel = Arc::new(Channel::new(
             channel_id,
             Some(state.get_parent()),
             state.get_name().to_string(),
             state.get_description().to_string(),
             state.get_temporary(),
-        )));
+        ));
 
         self.channels.insert(channel_id, channel.clone());
 
         channel
     }
 
-    pub async fn get_client_by_name(&self, name: &str) -> Result<Option<Arc<RwLock<Client>>>, MumbleError> {
-        for client in self.clients.values() {
+    pub fn get_client_by_name(&self, name: &str) -> Option<ClientRef> {
+        for client in self.clients.iter() {
             {
-                let client_read = client.read_err().await?;
-
-                if client_read.authenticate.get_username() == name {
-                    return Ok(Some(client.clone()));
+                if client.authenticate.get_username() == name {
+                    return Some(client.clone());
                 }
             }
         }
 
-        Ok(None)
+        None
     }
 
-    pub async fn set_client_socket(&mut self, client: Arc<RwLock<Client>>, addr: SocketAddr) -> Result<(), MumbleError> {
+    pub async fn set_client_socket(&self, client: ClientRef, addr: SocketAddr) {
         {
-            let client_read = client.read_err().await?;
-
-            if let Some(exiting_addr) = client_read.udp_socket_addr {
+            let socket_lock = client.udp_socket_addr.read().await;
+            if let Some(exiting_addr) = *socket_lock {
                 self.clients_by_socket.remove(&exiting_addr);
             }
         }
 
         {
-            client.write_err().await?.udp_socket_addr = Some(addr);
+            *client.udp_socket_addr.write().await = Some(addr);
         }
 
         self.clients_by_socket.insert(addr, client);
-
-        Ok(())
     }
 
     pub async fn broadcast_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
@@ -166,17 +158,15 @@ impl ServerState {
 
         let bytes = message_to_bytes(kind, message)?;
 
-        for client in self.clients.values() {
+        for client in self.clients.iter() {
             {
-                let client_read = client.read_err().await?;
-
-                match client_read.publisher.try_send(ClientMessage::SendMessage {
+                match client.publisher.try_send(ClientMessage::SendMessage {
                     kind,
                     payload: bytes.clone(),
                 }) {
                     Ok(_) => {}
                     Err(err) => {
-                        tracing::error!("failed to send message to {}: {}", client_read.authenticate.get_username(), err);
+                        tracing::error!("failed to send message to {}: {}", client.authenticate.get_username(), err);
                     }
                 }
             }
@@ -186,20 +176,16 @@ impl ServerState {
     }
 
     async fn check_leave_channel(&self, leave_channel_id: u32) -> Result<Option<u32>, MumbleError> {
-        for client in self.clients.values() {
+        for client in self.clients.iter() {
             {
-                let client = client.read_err().await?;
-
                 if client.channel_id.load(Ordering::Relaxed) == leave_channel_id {
                     return Ok(None);
                 }
             }
         }
 
-        for channel in self.channels.values() {
+        for channel in self.channels.iter() {
             {
-                let channel = channel.read_err().await?;
-
                 if channel.parent_id == Some(leave_channel_id) {
                     return Ok(None);
                 }
@@ -208,8 +194,6 @@ impl ServerState {
 
         if let Some(channel) = self.channels.get(&leave_channel_id) {
             {
-                let channel = channel.read_err().await?;
-
                 if channel.temporary {
                     // Broadcast channel remove
                     let mut channel_remove = ChannelRemove::new();
@@ -239,12 +223,12 @@ impl ServerState {
         Ok(Some(leave_channel_id))
     }
 
-    pub async fn set_client_channel(&self, client: Arc<RwLock<Client>>, channel_id: u32) -> Result<Option<u32>, MumbleError> {
-        let leave_channel_id = { client.read_err().await?.join_channel(channel_id) };
+    pub async fn set_client_channel(&self, client: ClientRef, channel_id: u32) -> Result<Option<u32>, MumbleError> {
+        let leave_channel_id = { client.join_channel(channel_id) };
 
         if let Some(leave_channel_id) = leave_channel_id {
             // Broadcast new user state
-            let user_state = { client.read_err().await?.get_user_state() };
+            let user_state = { client.get_user_state() };
 
             match self.broadcast_message(MessageKind::UserState, &user_state).await {
                 Ok(_) => (),
@@ -257,12 +241,10 @@ impl ServerState {
         Ok(None)
     }
 
-    pub async fn get_channel_by_name(&self, name: &str) -> Result<Option<Arc<RwLock<Channel>>>, MumbleError> {
-        for channel in self.channels.values() {
+    pub async fn get_channel_by_name(&self, name: &str) -> Result<Option<ChannelRef>, MumbleError> {
+        for channel in self.channels.iter() {
             {
-                let channel_read = channel.read_err().await?;
-
-                if channel_read.name == name {
+                if channel.name == name {
                     return Ok(Some(channel.clone()));
                 }
             }
@@ -272,14 +254,12 @@ impl ServerState {
     }
 
     pub async fn check_codec(&self) -> Result<Option<CodecVersion>, MumbleError> {
-        let current_version = { self.codec_state.read_err().await?.get_version() };
+        let current_version = { self.codec_state.read().await.get_version() };
         let mut new_version = current_version;
         let mut versions = HashMap::new();
 
-        for client in self.clients.values() {
+        for client in self.clients.iter() {
             {
-                let client = client.read_err().await?;
-
                 for version in &client.codecs {
                     *versions.entry(*version).or_insert(0) += 1;
                 }
@@ -296,11 +276,11 @@ impl ServerState {
         }
 
         if new_version == current_version {
-            return Ok(Some(self.codec_state.read_err().await?.get_codec_version()));
+            return Ok(Some(self.codec_state.read().await.get_codec_version()));
         }
 
         let codec_version = {
-            let mut codec_state = self.codec_state.write_err().await?;
+            let mut codec_state = self.codec_state.write().await;
             codec_state.prefer_alpha = !codec_state.prefer_alpha;
 
             if codec_state.prefer_alpha {
@@ -322,51 +302,51 @@ impl ServerState {
         Ok(None)
     }
 
-    pub fn get_client_by_socket(&self, socket_addr: &SocketAddr) -> Option<Arc<RwLock<Client>>> {
+    pub fn get_client_by_socket(&self, socket_addr: &SocketAddr) -> Option<ClientRef> {
         match self.clients_by_socket.get(socket_addr) {
             Some(client) => Some(client.clone()),
             None => None,
         }
     }
 
-    pub fn remove_client_by_socket(&mut self, socket_addr: &SocketAddr) {
+    pub fn remove_client_by_socket(&self, socket_addr: &SocketAddr) {
         self.clients_by_socket.remove(socket_addr);
     }
 
     pub async fn find_client_for_packet(
         &self,
         bytes: &mut BytesMut,
-    ) -> Result<(Option<Arc<RwLock<Client>>>, Option<VoicePacket<Serverbound>>, Vec<SocketAddr>), MumbleError> {
+    ) -> Result<(Option<ClientRef>, Option<VoicePacket<Serverbound>>, Vec<SocketAddr>), MumbleError> {
         let mut address_to_remove = Vec::new();
 
-        for c in self.clients.values() {
-            let crypt_state = { c.read_err().await?.crypt_state.clone() };
+        for c in self.clients.iter() {
+            let crypt_state = { c.crypt_state.clone() };
             let mut try_buf = bytes.clone();
-            let decrypt_result = { crypt_state.write_err().await?.decrypt(&mut try_buf) };
+            let decrypt_result = { crypt_state.write().await.decrypt(&mut try_buf) };
 
             match decrypt_result {
                 Ok(p) => {
                     return Ok((Some(c.clone()), Some(p), address_to_remove));
                 }
                 Err(err) => {
-                    let duration = { Instant::now().duration_since(crypt_state.read_err().await?.last_good).as_millis() };
+                    let duration = { Instant::now().duration_since(crypt_state.read().await.last_good).as_millis() };
 
                     // last good packet was more than 5sec ago, reset
                     if duration > 5000 {
-                        let send_crypt_setup = { c.read_err().await?.send_crypt_setup(true).await };
+                        let send_crypt_setup = { c.send_crypt_setup(true).await };
 
                         if let Err(e) = send_crypt_setup {
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
 
-                        let address_option = { c.read_err().await?.udp_socket_addr.clone() };
+                        {
+                            let mut address_option = c.udp_socket_addr.write().await;
 
-                        if let Some(address) = address_option {
-                            address_to_remove.push(address);
+                            if let Some(address) = *address_option {
+                                address_to_remove.push(address);
 
-                            {
-                                c.write_err().await?.udp_socket_addr = None
-                            };
+                                *address_option = None;
+                            }
                         }
                     }
 
@@ -378,18 +358,20 @@ impl ServerState {
         Ok((None, None, address_to_remove))
     }
 
-    pub async fn disconnect(&mut self, client: Arc<RwLock<Client>>) -> Result<(u32, u32), MumbleError> {
-        let client_id = { client.read_err().await?.session_id };
+    pub async fn disconnect(&self, client: ClientRef) -> Result<(u32, u32), MumbleError> {
+        let client_id = { client.session_id };
 
         self.clients.remove(&client_id);
 
-        let socket_addr = { client.read_err().await?.udp_socket_addr.clone() };
+        {
+            let socket_addr = { client.udp_socket_addr.read().await };
 
-        if let Some(socket_addr) = socket_addr {
-            self.clients_by_socket.remove(&socket_addr);
+            if let Some(socket_addr) = *socket_addr {
+                self.clients_by_socket.remove(&socket_addr);
+            }
         }
 
-        let channel_id = { client.read_err().await?.channel_id.load(Ordering::Relaxed) };
+        let channel_id = { client.channel_id.load(Ordering::Relaxed) };
 
         Ok((client_id, channel_id))
     }

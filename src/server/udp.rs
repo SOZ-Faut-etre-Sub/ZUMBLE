@@ -1,17 +1,17 @@
 use crate::error::DecryptError;
 use crate::message::ClientMessage;
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::voice::VoicePacket;
 use crate::ServerState;
-use anyhow::Context;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
+use tokio::sync::RwLock;
 
-pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) {
+pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef) {
     loop {
         match udp_server_run(protocol_version, socket.clone(), state.clone()).await {
             Ok(_) => (),
@@ -20,7 +20,7 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
     }
 }
 
-async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) -> Result<(), anyhow::Error> {
+async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef) -> Result<(), anyhow::Error> {
     let mut buffer = BytesMut::zeroed(1024);
     let (size, addr) = socket.recv_from(&mut buffer).await?;
     buffer.resize(size, 0);
@@ -35,7 +35,14 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Ar
     Ok(())
 }
 
-async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) -> Result<(), anyhow::Error> {
+async fn handle_packet(
+    mut buffer: BytesMut,
+    size: usize,
+    addr: SocketAddr,
+    protocol_version: u32,
+    socket: Arc<UdpSocket>,
+    state: ServerStateRef,
+) -> Result<(), anyhow::Error> {
     let mut cursor = Cursor::new(&buffer[..size]);
     let kind = cursor.read_u32::<byteorder::BigEndian>()?;
 
@@ -62,27 +69,18 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
         return Ok(());
     }
 
-    let client_opt = { state.read_err().await?.get_client_by_socket(&addr) };
+    let client_opt = { state.get_client_by_socket(&addr) };
 
     let (client, packet) = match client_opt {
         Some(client) => {
             // Send decrypt packet
 
-            let decrypt_result = {
-                client
-                    .read_err()
-                    .await?
-                    .crypt_state
-                    .write_err()
-                    .await
-                    .context("decrypt voice packet")?
-                    .decrypt(&mut buffer)
-            };
+            let decrypt_result = { client.crypt_state.write().await.decrypt(&mut buffer) };
 
             match decrypt_result {
                 Ok(p) => (client, p),
                 Err(err) => {
-                    let username = { client.read_err().await?.authenticate.get_username().to_string() };
+                    let username = { client.authenticate.get_username().to_string() };
                     tracing::warn!("client {} decrypt error: {}", username, err);
 
                     crate::metrics::MESSAGES_TOTAL
@@ -95,7 +93,7 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
 
                     let restart_crypt = match err {
                         DecryptError::Late => {
-                            let late = { client.read_err().await?.crypt_state.read_err().await?.late };
+                            let late = { client.crypt_state.read().await.late };
 
                             late > 100
                         }
@@ -106,26 +104,20 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
                     if restart_crypt {
                         tracing::error!("client {} udp decrypt error: {}, reset crypt setup", username, err);
 
-                        let send_crypt_setup = { client.read_err().await?.send_crypt_setup(true).await };
+                        let send_crypt_setup = { client.send_crypt_setup(true).await };
 
                         if let Err(e) = send_crypt_setup {
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
 
-                        let client_address = { client.read_err().await?.udp_socket_addr.clone() };
+                        let mut client_address = { client.udp_socket_addr.write().await };
 
                         // Remove socket address from client
-                        if let Some(address) = client_address {
-                            {
-                                state
-                                    .write_err()
-                                    .await
-                                    .context("remove client by socket")?
-                                    .remove_client_by_socket(&address)
-                            };
+                        if let Some(address) = *client_address {
+                            state.remove_client_by_socket(&address);
 
                             {
-                                client.write_err().await.context("set udp socket to null")?.udp_socket_addr = None;
+                                *client_address = None;
                             };
                         }
                     }
@@ -135,35 +127,20 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
             }
         }
         None => {
-            let (client_opt, packet_opt, address_to_remove) = { state.read_err().await?.find_client_for_packet(&mut buffer).await? };
+            let (client_opt, packet_opt, address_to_remove) = { state.find_client_for_packet(&mut buffer).await? };
 
             for address in address_to_remove {
-                {
-                    state
-                        .write_err()
-                        .await
-                        .context("remove client by socket when searching for one")?
-                        .remove_client_by_socket(&address)
-                };
+                state.remove_client_by_socket(&address);
             }
 
             match (client_opt, packet_opt) {
                 (Some(client), Some(packet)) => {
                     {
-                        tracing::info!(
-                            "UPD connected client {} on {}",
-                            client.read_err().await?.authenticate.get_username(),
-                            addr
-                        );
+                        tracing::info!("UPD connected client {} on {}", client.authenticate.get_username(), addr);
                     }
 
                     {
-                        state
-                            .write_err()
-                            .await
-                            .context("set client socket")?
-                            .set_client_socket(client.clone(), addr)
-                            .await?;
+                        state.set_client_socket(client.clone(), addr).await;
                     }
 
                     (client, packet)
@@ -185,7 +162,7 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
         }
     };
 
-    let session_id = { client.read_err().await?.session_id };
+    let session_id = client.session_id;
     let client_packet = packet.into_client_bound(session_id);
 
     match &client_packet {
@@ -201,14 +178,7 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
             let mut dest = BytesMut::new();
 
             {
-                client
-                    .read_err()
-                    .await?
-                    .crypt_state
-                    .write_err()
-                    .await
-                    .context("encrypt voice packet")?
-                    .encrypt(&client_packet, &mut dest);
+                client.crypt_state.write().await.encrypt(&client_packet, &mut dest);
             }
 
             let buf = &dest.freeze()[..];
@@ -237,13 +207,7 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
                 .with_label_values(&["udp", "input", "VoicePacket"])
                 .inc_by(size as u64);
 
-            let send_client_packet = {
-                client
-                    .read_err()
-                    .await?
-                    .publisher
-                    .try_send(ClientMessage::RouteVoicePacket(client_packet))
-            };
+            let send_client_packet = { client.publisher.try_send(ClientMessage::RouteVoicePacket(client_packet)) };
 
             match send_client_packet {
                 Ok(_) => (),

@@ -3,33 +3,37 @@ use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UDPTunnel, UserState, Version};
 use crate::proto::{expected_message, message_to_bytes, send_message, MessageKind};
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::target::VoiceTarget;
 use crate::voice::{encode_voice_packet, Clientbound, VoicePacket};
 use crate::ServerState;
 use bytes::BytesMut;
+use protobuf::reflect::ProtobufValue;
 use protobuf::Message;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
+use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tokio_rustls::server::TlsStream;
+
+pub type ClientRef = Arc<Client>;
 
 pub struct Client {
     pub version: Version,
     pub authenticate: Authenticate,
     pub session_id: u32,
     pub channel_id: AtomicU32,
-    pub mute: bool,
-    pub deaf: bool,
+    pub mute: AtomicBool,
+    pub deaf: AtomicBool,
     pub write: RwLock<WriteHalf<TlsStream<TcpStream>>>,
     pub tokens: Vec<String>,
     pub crypt_state: Arc<RwLock<CryptState>>,
-    pub udp_socket_addr: Option<SocketAddr>,
+    pub udp_socket_addr: RwLock<Option<SocketAddr>>,
     pub use_opus: bool,
     pub codecs: Vec<i32>,
     pub udp_socket: Arc<UdpSocket>,
@@ -81,9 +85,9 @@ impl Client {
             crypt_state: Arc::new(RwLock::new(crypt_state)),
             write: RwLock::new(write),
             tokens,
-            deaf: false,
-            mute: false,
-            udp_socket_addr: None,
+            deaf: AtomicBool::new(false),
+            mute: AtomicBool::new(false),
+            udp_socket_addr: RwLock::new(None),
             use_opus: if authenticate.has_opus() { authenticate.get_opus() } else { false },
             codecs: authenticate.get_celt_versions().to_vec(),
             authenticate,
@@ -99,19 +103,27 @@ impl Client {
     }
 
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {
-        match timeout(Duration::from_secs(1), self.write.write_err().await?.write_all(data)).await {
+        match timeout(Duration::from_secs(1), self.write.write().await.write_all(data)).await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(e)) => Err(MumbleError::Io(e)),
             Err(_) => Err(MumbleError::Timeout),
         }
     }
 
-    pub fn mute(&mut self, mute: bool) {
-        self.mute = mute;
+    pub fn is_muted(&self) -> bool {
+        return self.mute.load(Ordering::Relaxed);
     }
 
-    pub fn deaf(&mut self, deaf: bool) {
-        self.deaf = deaf;
+    pub fn is_deaf(&self) -> bool {
+        return self.deaf.load(Ordering::Relaxed);
+    }
+
+    pub fn mute(&self, mute: bool) {
+        self.mute.store(mute, Ordering::Release);
+    }
+
+    pub fn deaf(&self, deaf: bool) {
+        self.deaf.store(deaf, Ordering::Release);
     }
 
     pub async fn send_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
@@ -141,11 +153,11 @@ impl Client {
     pub async fn send_crypt_setup(&self, reset: bool) -> Result<(), MumbleError> {
         if reset {
             {
-                self.crypt_state.write_err().await?.reset();
+                self.crypt_state.write().await.reset();
             }
         }
 
-        let crypt_setup = { self.crypt_state.read_err().await?.get_crypt_setup() };
+        let crypt_setup = { self.crypt_state.read().await.get_crypt_setup() };
 
         self.send_message(MessageKind::CryptSetup, &crypt_setup).await
     }
@@ -156,20 +168,18 @@ impl Client {
         self.send_message(MessageKind::UserState, &user_state).await
     }
 
-    pub async fn sync_client_and_channels(&self, state: &Arc<RwLock<ServerState>>) -> Result<(), MumbleError> {
+    pub async fn sync_client_and_channels(&self, state: &ServerStateRef) -> Result<(), MumbleError> {
         {
-            let state_read = state.read_err().await?;
-
             // Send channel states
-            for channel in state_read.channels.values() {
-                let channel_state = { channel.read_err().await?.get_channel_state() };
+            for channel in state.channels.iter() {
+                let channel_state = { channel.get_channel_state() };
 
-                self.send_message(MessageKind::ChannelState, &channel_state).await?;
+                self.send_message(MessageKind::ChannelState, channel_state.as_ref()).await?;
             }
 
             // Send user states
-            for client in state_read.clients.values() {
-                let user_state = { client.read_err().await?.get_user_state() };
+            for client in state.clients.iter() {
+                let user_state = client.get_user_state();
 
                 self.send_message(MessageKind::UserState, &user_state).await?;
             }
@@ -197,9 +207,9 @@ impl Client {
     }
 
     pub async fn send_voice_packet(&self, packet: VoicePacket<Clientbound>) -> Result<(), MumbleError> {
-        if let Some(addr) = self.udp_socket_addr {
+        if let Some(addr) = *self.udp_socket_addr.read().await {
             let mut dest = BytesMut::new();
-            self.crypt_state.write_err().await?.encrypt(&packet, &mut dest);
+            self.crypt_state.write().await.encrypt(&packet, &mut dest);
 
             let buf = &dest.freeze()[..];
 
@@ -230,13 +240,13 @@ impl Client {
         self.send_message(MessageKind::UDPTunnel, &tunnel_message).await
     }
 
-    pub fn update(&mut self, state: &UserState) {
+    pub fn update(&self, state: &UserState) {
         if state.has_mute() {
-            self.mute = state.get_mute();
+            self.mute(state.get_mute());
         }
 
         if state.has_deaf() {
-            self.deaf = state.get_deaf();
+            self.deaf(state.get_deaf());
         }
     }
 

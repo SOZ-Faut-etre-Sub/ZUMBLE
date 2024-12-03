@@ -24,7 +24,8 @@ use crate::http::create_http_server;
 use crate::proto::mumble::Version;
 use crate::server::{create_tcp_server, create_udp_server};
 use crate::state::ServerState;
-use crate::sync::RwLock;
+use tokio::sync::RwLock;
+
 use clap::Parser;
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 use rustls_pki_types::pem::PemObject;
@@ -81,7 +82,6 @@ async fn main() {
 
     let key_der = PrivateKeyDer::from_pem_slice(pem.as_bytes()).expect("Couldn't make key_der");
 
-
     let config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(vec![cert.der().clone()], key_der)
@@ -102,7 +102,7 @@ async fn main() {
     server_version.set_version(version);
 
     let udp_socket = Arc::new(UdpSocket::bind(&args.listen).await.unwrap());
-    let state = Arc::new(RwLock::new(ServerState::new(udp_socket.clone())));
+    let state = Arc::new(ServerState::new(udp_socket.clone()));
     let udp_state = state.clone();
 
     actix_rt::spawn(async move {

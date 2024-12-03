@@ -1,85 +1,57 @@
-use crate::client::Client;
+use dashmap::DashMap;
+use tokio::sync::RwLock;
+
+use crate::client::{Client, ClientRef};
 use crate::proto::mumble::ChannelState;
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::ServerState;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-#[derive(Debug)]
+pub type ChannelRef = Arc<Channel>;
+
 pub struct Channel {
     pub id: u32,
     pub parent_id: Option<u32>,
     pub name: String,
     pub description: String,
     pub temporary: bool,
-    pub listeners: HashSet<u32>,
+    pub listeners: Arc<DashMap<u32, ClientRef>>,
+    channel_state_cache: Arc<ChannelState>,
 }
 
 impl Channel {
     pub fn new(id: u32, parent_id: Option<u32>, name: String, description: String, temporary: bool) -> Self {
+        let mut state = ChannelState::new();
+
+        state.set_channel_id(id);
+        state.set_name(name.clone());
+        state.set_description(description.clone());
+
+        if let Some(parent_id) = parent_id {
+            state.set_parent(parent_id);
+        }
+
+        state.set_temporary(temporary);
+        state.set_position(id as i32);
+
         Self {
             id,
+            channel_state_cache: Arc::new(state),
             parent_id,
             name,
             description,
             temporary,
-            listeners: HashSet::new(),
+            listeners: Arc::new(DashMap::new()),
         }
     }
 
-    pub fn get_channel_state(&self) -> ChannelState {
-        let mut state = ChannelState::new();
-
-        state.set_channel_id(self.id);
-        state.set_name(self.name.clone());
-        state.set_description(self.description.clone());
-
-        if let Some(parent_id) = self.parent_id {
-            state.set_parent(parent_id);
-        }
-
-        state.set_temporary(self.temporary);
-        state.set_position(self.id as i32);
-
-        state
+    pub fn get_channel_state(&self) -> Arc<ChannelState> {
+        return self.channel_state_cache.clone();
     }
 
-    pub async fn get_listeners(&self, state: Arc<RwLock<ServerState>>) -> HashMap<u32, Arc<RwLock<Client>>> {
-        let mut listening_clients = HashMap::new();
-
-        let state_read = match state.read_err().await {
-            Ok(s) => s,
-            Err(err) => {
-                tracing::error!("failed to get listeners: {}", err);
-
-                return listening_clients;
-            }
-        };
-
-        for client in state_read.clients.values() {
-            {
-                let client_read = match client.read_err().await {
-                    Ok(c) => c,
-                    Err(err) => {
-                        tracing::error!("failed to get client: {}", err);
-
-                        continue;
-                    }
-                };
-
-                if client_read.channel_id.load(Ordering::Relaxed) == self.id {
-                    listening_clients.insert(client_read.session_id, client.clone());
-                }
-            }
-        }
-
-        for client_id in &self.listeners {
-            if let Some(client) = state_read.clients.get(client_id) {
-                listening_clients.insert(*client_id, client.clone());
-            }
-        }
-
-        listening_clients
+    pub fn get_listeners(&self) -> Arc<DashMap<u32, ClientRef>> {
+        return self.listeners.clone();
     }
 }

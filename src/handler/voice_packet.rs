@@ -1,19 +1,20 @@
-use crate::client::Client;
+use crate::client::{Client, ClientRef};
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::message::ClientMessage;
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::voice::{Clientbound, VoicePacket};
 use crate::ServerState;
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[async_trait]
 impl Handler for VoicePacket<Clientbound> {
-    async fn handle(&self, state: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
-        let mute = { client.read_err().await?.mute };
+    async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
+        let mute = client.is_muted();
 
         if mute {
             return Ok(());
@@ -25,36 +26,40 @@ impl Handler for VoicePacket<Clientbound> {
             match *target {
                 // Channel
                 0 => {
-                    let channel_id = { client.read_err().await?.channel_id.load(Ordering::Relaxed) };
-                    let channel_result = { state.read_err().await?.channels.get(&channel_id).cloned() };
+                    let channel_id = { client.channel_id.load(Ordering::Relaxed) };
+                    let channel_result = { state.channels.get(&channel_id) };
 
                     if let Some(channel) = channel_result {
                         {
-                            listening_clients.extend(channel.read_err().await?.get_listeners(state.clone()).await);
+                            for data in channel.get_listeners().iter() {
+                                listening_clients.insert(data.key().clone(), data.value().clone());
+                            }
                         }
                     }
                 }
                 // Voice target (whisper)
                 1..=30 => {
-                    let target = { client.read_err().await?.get_target((*target - 1) as usize) };
+                    let target = { client.get_target((*target - 1) as usize) };
 
                     if let Some(target) = target {
-                        let target = target.read_err().await?;
+                        let target = target.read().await;
 
                         for client_id in &target.sessions {
-                            let client_result = { state.read_err().await?.clients.get(client_id).cloned() };
+                            let client_result = { state.clients.get(client_id) };
 
                             if let Some(client) = client_result {
-                                listening_clients.insert(*client_id, client);
+                                listening_clients.insert(*client_id, client.value().clone());
                             }
                         }
 
                         for channel_id in &target.channels {
-                            let channel_result = { state.read_err().await?.channels.get(channel_id).cloned() };
+                            let channel_result = { state.channels.get(channel_id) };
 
                             if let Some(channel) = channel_result {
                                 {
-                                    listening_clients.extend(channel.read_err().await?.get_listeners(state.clone()).await);
+                                    for data in channel.get_listeners().iter() {
+                                        listening_clients.insert(data.key().clone(), data.value().clone());
+                                    }
                                 }
                             }
                         }
@@ -63,7 +68,7 @@ impl Handler for VoicePacket<Clientbound> {
                 // Loopback
                 31 => {
                     {
-                        client.read_err().await?.send_voice_packet(self.clone()).await?;
+                        client.send_voice_packet(self.clone()).await?;
                     }
 
                     return Ok(());
@@ -75,19 +80,17 @@ impl Handler for VoicePacket<Clientbound> {
 
             for client in listening_clients.values() {
                 {
-                    let client_read = client.read_err().await?;
-
-                    if client_read.deaf {
+                    if client.is_deaf() {
                         continue;
                     }
 
-                    if client_read.session_id != *session_id {
-                        match client_read.publisher.try_send(ClientMessage::SendVoicePacket(self.clone())) {
+                    if client.session_id != *session_id {
+                        match client.publisher.try_send(ClientMessage::SendVoicePacket(self.clone())) {
                             Ok(_) => {}
                             Err(err) => {
                                 tracing::error!(
                                     "error sending voice packet message to {}: {}",
-                                    client_read.authenticate.get_username(),
+                                    client.authenticate.get_username(),
                                     err
                                 );
                             }

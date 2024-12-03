@@ -1,21 +1,22 @@
-use crate::client::Client;
+use crate::client::{Client, ClientRef};
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::VoiceTarget;
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::ServerState;
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[async_trait]
 impl Handler for VoiceTarget {
-    async fn handle(&self, _: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
+    async fn handle(&self, _: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         if !self.has_id() {
             return Ok(());
         }
 
-        let target_opt = { client.read_err().await?.get_target((self.get_id() - 1) as usize) };
+        let target_opt = { client.get_target((self.get_id() - 1) as usize) };
 
         let target = match target_opt {
             Some(target) => target,
@@ -40,8 +41,8 @@ impl Handler for VoiceTarget {
         }
 
         {
-            target.write_err().await?.sessions = sessions;
-            target.write_err().await?.channels = channels;
+            target.write().await.sessions = sessions;
+            target.write().await.channels = channels;
         }
 
         Ok(())
