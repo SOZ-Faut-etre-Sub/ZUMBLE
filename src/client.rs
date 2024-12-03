@@ -6,7 +6,6 @@ use crate::proto::{expected_message, message_to_bytes, send_message, MessageKind
 use crate::state::ServerStateRef;
 use crate::target::VoiceTarget;
 use crate::voice::{encode_voice_packet, Clientbound, VoicePacket};
-use crate::ServerState;
 use bytes::BytesMut;
 use protobuf::reflect::ProtobufValue;
 use protobuf::Message;

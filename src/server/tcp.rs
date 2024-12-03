@@ -4,17 +4,14 @@ use crate::message::ClientMessage;
 use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
 use crate::state::ServerStateRef;
-use crate::ServerState;
 use actix_server::Server;
 use actix_service::fn_service;
 use anyhow::Context;
-use std::sync::Arc;
 use tokio::io;
 use tokio::io::ReadHalf;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::RwLock;
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
 
 pub fn create_tcp_server(tcp_listener: TcpListener, acceptor: TlsAcceptor, server_version: Version, state: ServerStateRef) -> Server {

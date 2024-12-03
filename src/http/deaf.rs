@@ -1,9 +1,6 @@
-use crate::ServerState;
 use crate::{error::MumbleError, state::ServerStateRef};
 use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 #[derive(Serialize, Deserialize)]
 pub struct Deaf {

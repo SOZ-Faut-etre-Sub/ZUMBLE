@@ -70,7 +70,7 @@ pub struct ServerState {
 
 impl ServerState {
     pub fn new(socket: Arc<UdpSocket>) -> Self {
-        let mut channels = DashMap::new();
+        let channels = DashMap::new();
         channels.insert(
             0,
             Arc::new(Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false)),
