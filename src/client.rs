@@ -3,6 +3,7 @@ use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UDPTunnel, UserState, Version};
 use crate::proto::{expected_message, message_to_bytes, send_message, MessageKind};
+use crate::server::constants::MAX_BANDWIDTH;
 use crate::state::ServerStateRef;
 use crate::target::VoiceTarget;
 use crate::voice::{encode_voice_packet, ClientBound, VoicePacket};
@@ -21,6 +22,8 @@ use tokio_rustls::server::TlsStream;
 
 pub type ClientRef = Arc<Client>;
 
+type VoiceTargetArray = [Arc<VoiceTarget>; 29];
+
 pub struct Client {
     // pub version: Version,
     pub authenticate: Authenticate,
@@ -36,7 +39,7 @@ pub struct Client {
     pub codecs: Vec<i32>,
     pub udp_socket: Arc<UdpSocket>,
     pub publisher: Sender<ClientMessage>,
-    pub targets: [Arc<VoiceTarget>; 30],
+    pub targets: VoiceTargetArray,
     pub last_ping: RwLock<Instant>,
 }
 
@@ -73,7 +76,7 @@ impl Client {
         publisher: Sender<ClientMessage>,
     ) -> Self {
         // let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
-        let targets: [Arc<VoiceTarget>; 30] = core::array::from_fn(|_v| Arc::new(VoiceTarget::default()));
+        let targets: VoiceTargetArray = core::array::from_fn(|_v| Arc::new(VoiceTarget::default()));
 
         Self {
             // version,
@@ -95,8 +98,11 @@ impl Client {
         }
     }
 
+    /// Gets the current voice target for the specific id
+    /// NOTE: Since voice target 0 and 31 can't be used this will automatically reduce the id by
+    /// one to reduce the needed storage for voice targets.
     pub fn get_target(&self, id: u8) -> Option<Arc<VoiceTarget>> {
-        self.targets.get(id as usize).cloned()
+        self.targets.get((id - 1) as usize).cloned()
     }
 
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {
@@ -187,7 +193,7 @@ impl Client {
 
     pub async fn send_server_sync(&self) -> Result<(), MumbleError> {
         let mut server_sync = ServerSync::default();
-        server_sync.set_max_bandwidth(144000);
+        server_sync.set_max_bandwidth(MAX_BANDWIDTH);
         server_sync.set_session(self.session_id);
         server_sync.set_welcome_text("SoZ Mumble Server".to_string());
 
