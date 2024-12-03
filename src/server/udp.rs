@@ -33,6 +33,9 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Se
     Ok(())
 }
 
+const MAX_PLAYERS: u32 = 2048;
+pub const MAX_BANDWIDTH_PER_PLAYER: u32 = 144000;
+
 async fn handle_packet(
     mut buffer: BytesMut,
     size: usize,
@@ -44,15 +47,22 @@ async fn handle_packet(
     let mut cursor = Cursor::new(&buffer[..size]);
     let kind = cursor.read_u32::<byteorder::BigEndian>()?;
 
+    // respond to the ping packet
     if size == 12 && kind == 0 {
         let timestamp = cursor.read_u64::<byteorder::LittleEndian>()?;
 
+        // TODO: actually read version and follow the mumble spec for using UDP protobufs here
         let mut send = Cursor::new(vec![0u8; 24]);
+        // server version
         send.write_u32::<byteorder::BigEndian>(protocol_version)?;
+        // timestamp
         send.write_u64::<byteorder::LittleEndian>(timestamp)?;
-        send.write_u32::<byteorder::BigEndian>(0)?;
-        send.write_u32::<byteorder::BigEndian>(250)?;
-        send.write_u32::<byteorder::BigEndian>(72000)?;
+        // user count
+        send.write_u32::<byteorder::BigEndian>(state.clients.len() as u32)?;
+        // max user count
+        send.write_u32::<byteorder::BigEndian>(MAX_PLAYERS)?;
+        // max bandwidth per user
+        send.write_u32::<byteorder::BigEndian>(MAX_BANDWIDTH_PER_PLAYER)?;
 
         socket.send_to(send.get_ref().as_slice(), addr).await?;
 
