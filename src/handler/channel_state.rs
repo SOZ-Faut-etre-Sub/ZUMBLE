@@ -1,11 +1,10 @@
-use crate::client::{ClientRef};
+use crate::client::ClientRef;
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::ChannelState;
 use crate::proto::MessageKind;
 use crate::state::ServerStateRef;
 use async_trait::async_trait;
-use protobuf::reflect::ProtobufValue;
 
 #[async_trait]
 impl Handler for ChannelState {

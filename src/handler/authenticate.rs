@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 #[async_trait]
 impl Handler for Authenticate {
-    async fn handle(&self, _state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
+    async fn handle(&self, _state: ServerStateRef, _client: ClientRef) -> Result<(), MumbleError> {
         // we don't do ACL
         // client.tokens = self.get_tokens().iter().map(|token| token.to_string()).collect();
 

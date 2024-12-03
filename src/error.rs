@@ -13,8 +13,6 @@ pub enum MumbleError {
     Decrypt(#[from] DecryptError),
     #[error("force disconnecting client")]
     ForceDisconnect,
-    #[error("lock error: {0}")]
-    LockError(#[from] crate::sync::Error),
     #[error("send message error: {0}")]
     SendError(#[from] tokio::sync::mpsc::error::SendTimeoutError<ClientMessage>),
     #[error("timeout error")]

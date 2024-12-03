@@ -77,7 +77,7 @@ async fn handle_new_client(
     crate::metrics::CLIENTS_TOTAL.dec();
 
     {
-        state.remove_client(client_id, channel_id).await;
+        state.remove_client(client_id, channel_id).await?;
     }
 
     Ok(())
