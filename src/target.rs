@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use dashmap::DashSet;
 
 #[derive(Default, Debug)]
 pub struct VoiceTarget {
-    pub sessions: HashSet<u32>,
-    pub channels: HashSet<u32>,
+    pub sessions: DashSet<u32>,
+    pub channels: DashSet<u32>,
 }
