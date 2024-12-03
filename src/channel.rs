@@ -10,6 +10,7 @@ pub struct Channel {
     pub id: u32,
     pub parent_id: Option<u32>,
     pub name: String,
+    // unused, the client will get this via ChannelState anyways
     // pub description: String,
     pub temporary: bool,
     pub listeners: Arc<DashMap<u32, ClientRef>>,
