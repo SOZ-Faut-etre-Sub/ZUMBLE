@@ -29,7 +29,7 @@ impl Handler for VoicePacket<Clientbound> {
                     if let Some(channel) = channel_result {
                         {
                             for data in channel.get_listeners().iter() {
-                                listening_clients.insert(data.key().clone(), data.value().clone());
+                                listening_clients.insert(*data.key(), data.value().clone());
                             }
                         }
                     }
@@ -55,7 +55,11 @@ impl Handler for VoicePacket<Clientbound> {
                             if let Some(channel) = channel_result {
                                 {
                                     for data in channel.get_listeners().iter() {
-                                        listening_clients.insert(data.key().clone(), data.value().clone());
+                                        listening_clients.insert(*data.key(), data.value().clone());
+                                    }
+
+                                    for data in channel.get_clients().iter() {
+                                        listening_clients.insert(*data.key(), data.value().clone());
                                     }
                                 }
                             }

@@ -13,6 +13,7 @@ pub struct Channel {
     pub description: String,
     pub temporary: bool,
     pub listeners: Arc<DashMap<u32, ClientRef>>,
+    pub clients: Arc<DashMap<u32, ClientRef>>,
     channel_state_cache: Arc<ChannelState>,
 }
 
@@ -38,6 +39,7 @@ impl Channel {
             name,
             description,
             temporary,
+            clients: Arc::new(DashMap::new()),
             listeners: Arc::new(DashMap::new()),
         }
     }
@@ -48,5 +50,9 @@ impl Channel {
 
     pub fn get_listeners(&self) -> Arc<DashMap<u32, ClientRef>> {
         return self.listeners.clone();
+    }
+
+    pub fn get_clients(&self) -> Arc<DashMap<u32, ClientRef>> {
+        self.clients.clone()
     }
 }

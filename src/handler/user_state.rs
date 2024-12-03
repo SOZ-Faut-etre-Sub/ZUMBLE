@@ -19,15 +19,8 @@ impl Handler for UserState {
         }
 
         if self.has_channel_id() {
-            let leave_channel_id = match state.set_client_channel(client.clone(), self.get_channel_id()).await {
-                Ok(l) => l,
-                Err(_) => None,
-            };
-
-            if let Some(leave_channel_id) = leave_channel_id {
-                {
-                    state.channels.remove(&leave_channel_id);
-                }
+            if let Some(channel) = state.channels.get(&self.get_channel_id()) {
+                state.set_client_channel(client.clone(), channel.value().clone()).await;
             }
         }
 

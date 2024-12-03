@@ -51,7 +51,7 @@ impl Handler for ChannelState {
                 client.send_message(MessageKind::ChannelState, channel_state.as_ref()).await?;
             }
 
-            channel_state.get_channel_id()
+            channel
         } else {
             let channel = { state.add_channel(self) };
             let channel_state = { channel.get_channel_state() };
@@ -60,20 +60,10 @@ impl Handler for ChannelState {
                 state.broadcast_message(MessageKind::ChannelState, channel_state.as_ref()).await?;
             }
 
-            channel_state.get_channel_id()
+            channel
         };
 
-        let leave_channel_id_result = { state.set_client_channel(client, new_channel_id).await };
-
-        let leave_channel_id = match leave_channel_id_result {
-            Ok(Some(leave_channel_id)) => leave_channel_id,
-            Ok(None) => return Ok(()),
-            Err(_) => return Ok(()),
-        };
-
-        {
-            state.channels.remove(&leave_channel_id);
-        }
+        state.set_client_channel(client, new_channel_id).await;
 
         Ok(())
     }

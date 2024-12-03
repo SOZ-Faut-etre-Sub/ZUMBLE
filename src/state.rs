@@ -175,26 +175,25 @@ impl ServerState {
         Ok(())
     }
 
-    async fn check_leave_channel(&self, leave_channel_id: u32) -> Result<Option<u32>, MumbleError> {
-        for client in self.clients.iter() {
-            {
-                if client.channel_id.load(Ordering::Relaxed) == leave_channel_id {
-                    return Ok(None);
-                }
-            }
-        }
-
+    async fn handle_client_left_channel(&self, client_session: u32, leave_channel_id: u32) -> Option<u32> {
+        // TODO: remove this iteration over every channel and just block the channel delete if the
+        // parent id is none
         for channel in self.channels.iter() {
             {
+                // don't remove root channel
                 if channel.parent_id == Some(leave_channel_id) {
-                    return Ok(None);
+                    return None;
                 }
             }
         }
 
         if let Some(channel) = self.channels.get(&leave_channel_id) {
+            // remove the client from the channel
+            channel.clients.remove(&client_session);
+            // TODO: Test that this works properly
+            // if channel.parent_id.is_none() { return None };
             {
-                if channel.temporary {
+                if channel.temporary && channel.get_clients().is_empty() {
                     // Broadcast channel remove
                     let mut channel_remove = ChannelRemove::new();
                     channel_remove.set_channel_id(leave_channel_id);
@@ -204,14 +203,17 @@ impl ServerState {
                         Err(e) => tracing::error!("failed to send channel remove: {:?}", e),
                     }
 
-                    return Ok(Some(leave_channel_id));
+                    self.channels.remove(&channel.id);
+
+                    return Some(leave_channel_id);
                 }
             }
 
-            return Ok(None);
+            return None;
         }
 
         // Broadcast channel remove
+        // TODO: Figure out why this is needed? This shouldn't be able to get hit
         let mut channel_remove = ChannelRemove::new();
         channel_remove.set_channel_id(leave_channel_id);
 
@@ -220,11 +222,13 @@ impl ServerState {
             Err(e) => tracing::error!("failed to send channel remove: {:?}", e),
         }
 
-        Ok(Some(leave_channel_id))
+        Some(leave_channel_id)
     }
 
-    pub async fn set_client_channel(&self, client: ClientRef, channel_id: u32) -> Result<Option<u32>, MumbleError> {
-        let leave_channel_id = { client.join_channel(channel_id) };
+    pub async fn set_client_channel(&self, client: ClientRef, channel: ChannelRef) {
+        let leave_channel_id = { client.join_channel(channel.id) };
+
+        channel.get_clients().insert(client.session_id, client.clone());
 
         if let Some(leave_channel_id) = leave_channel_id {
             // Broadcast new user state
@@ -235,10 +239,8 @@ impl ServerState {
                 Err(e) => tracing::error!("failed to send user state: {:?}", e),
             }
 
-            return Ok(self.check_leave_channel(leave_channel_id).await?);
+            self.handle_client_left_channel(client.session_id, leave_channel_id).await;
         }
-
-        Ok(None)
     }
 
     pub async fn get_channel_by_name(&self, name: &str) -> Result<Option<ChannelRef>, MumbleError> {
@@ -383,7 +385,7 @@ impl ServerState {
 
         self.broadcast_message(MessageKind::UserRemove, &remove).await?;
 
-        self.check_leave_channel(channel_id).await?;
+        self.handle_client_left_channel(client_id, channel_id).await;
 
         Ok(())
     }
