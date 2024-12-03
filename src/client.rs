@@ -115,11 +115,11 @@ impl Client {
         self.deaf.load(Ordering::Relaxed)
     }
 
-    pub fn mute(&self, mute: bool) {
+    pub fn set_mute(&self, mute: bool) {
         self.mute.store(mute, Ordering::Release);
     }
 
-    pub fn deaf(&self, deaf: bool) {
+    pub fn set_deaf(&self, deaf: bool) {
         self.deaf.store(deaf, Ordering::Release);
     }
 
@@ -239,11 +239,11 @@ impl Client {
 
     pub fn update(&self, state: &UserState) {
         if state.has_mute() {
-            self.mute(state.get_mute());
+            self.set_mute(state.get_mute());
         }
 
         if state.has_deaf() {
-            self.deaf(state.get_deaf());
+            self.set_deaf(state.get_deaf());
         }
     }
 
