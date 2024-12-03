@@ -36,7 +36,7 @@ pub struct Client {
     pub codecs: Vec<i32>,
     pub udp_socket: Arc<UdpSocket>,
     pub publisher: Sender<ClientMessage>,
-    pub targets: Vec<Arc<RwLock<VoiceTarget>>>,
+    pub targets: [Arc<VoiceTarget>; 30],
     pub last_ping: RwLock<Instant>,
 }
 
@@ -73,8 +73,7 @@ impl Client {
         publisher: Sender<ClientMessage>,
     ) -> Self {
         // let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
-        let mut targets = Vec::with_capacity(30);
-        targets.resize_with(30, Default::default);
+        let targets: [Arc<VoiceTarget>; 30] = core::array::from_fn(|v| Arc::new(VoiceTarget::default()));
 
         Self {
             // version,
@@ -96,8 +95,8 @@ impl Client {
         }
     }
 
-    pub fn get_target(&self, id: usize) -> Option<Arc<RwLock<VoiceTarget>>> {
-        self.targets.get(id).cloned()
+    pub fn get_target(&self, id: u8) -> Option<Arc<VoiceTarget>> {
+        self.targets.get(id as usize).cloned()
     }
 
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {

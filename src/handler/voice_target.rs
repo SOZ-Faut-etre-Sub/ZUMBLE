@@ -9,11 +9,12 @@ use std::collections::HashSet;
 #[async_trait]
 impl Handler for VoiceTarget {
     async fn handle(&self, _: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
-        if !self.has_id() {
+        // mumble spec limits the usable voice targets to 1..=30
+        if self.get_id() < 1 || self.get_id() >= 31 {
             return Ok(());
         }
 
-        let target_opt = { client.get_target((self.get_id() - 1) as usize) };
+        let target_opt = { client.get_target(self.get_id() as u8) };
 
         let target = match target_opt {
             Some(target) => target,
@@ -38,8 +39,17 @@ impl Handler for VoiceTarget {
         }
 
         {
-            target.write().await.sessions = sessions;
-            target.write().await.channels = channels;
+            target.sessions.clear();
+            target.channels.clear();
+
+            // can't use extend here
+            for v in sessions {
+                target.sessions.insert(v);
+            }
+
+            for v in channels {
+                target.channels.insert(v);
+            }
         }
 
         Ok(())

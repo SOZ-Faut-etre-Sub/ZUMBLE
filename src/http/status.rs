@@ -59,11 +59,9 @@ pub async fn get_status(state: web::Data<ServerStateRef>) -> Result<HttpResponse
 
             for target in &client.targets {
                 let mumble_target = {
-                    let target_read = target.read().await;
-
                     MumbleTarget {
-                        sessions: target_read.sessions.clone(),
-                        channels: target_read.channels.clone(),
+                        sessions: target.sessions.iter().map(|v| *v.key()).collect(),
+                        channels: target.channels.iter().map(|v| *v.key()).collect(),
                     }
                 };
 

@@ -36,21 +36,19 @@ impl Handler for VoicePacket<Clientbound> {
                 }
                 // Voice target (whisper)
                 1..=30 => {
-                    let target = { client.get_target((*target - 1) as usize) };
+                    let target = { client.get_target(*target) };
 
                     if let Some(target) = target {
-                        let target = target.read().await;
-
-                        for client_id in &target.sessions {
-                            let client_result = { state.clients.get(client_id) };
+                        for client_id in target.sessions.iter() {
+                            let client_result = { state.clients.get(&client_id) };
 
                             if let Some(client) = client_result {
-                                listening_clients.insert(*client_id, client.value().clone());
+                                listening_clients.insert(*client_id.key(), client.value().clone());
                             }
                         }
 
-                        for channel_id in &target.channels {
-                            let channel_result = { state.channels.get(channel_id) };
+                        for channel_id in target.channels.iter() {
+                            let channel_result = { state.channels.get(&channel_id) };
 
                             if let Some(channel) = channel_result {
                                 {
