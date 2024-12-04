@@ -52,7 +52,7 @@ async fn handle_new_client(
     stream: TcpStream,
 ) -> Result<(), anyhow::Error> {
     let cur_clients = state.clients.len();
-    if cur_clients >= (MAX_CLIENTS as usize) {
+    if cur_clients >= MAX_CLIENTS {
         return Err(anyhow!("{:?} tried to join but the server is at maximum capacity ({}/{})", stream.peer_addr(), cur_clients, MAX_CLIENTS));
     }
 
@@ -69,8 +69,6 @@ async fn handle_new_client(
     let username = authenticate.get_username().to_string();
     let client = { state.add_client(version, authenticate, crypt_state, write, tx) };
 
-    crate::metrics::CLIENTS_TOTAL.inc();
-
     tracing::info!("new client {} connected", username);
 
     match client_run(read, rx, state.clone(), client.clone()).await {
@@ -80,13 +78,7 @@ async fn handle_new_client(
 
     tracing::info!("client {} disconnected", username);
 
-    let (client_id, channel_id) = { state.disconnect(client).await.context("disconnect user")? };
-
-    crate::metrics::CLIENTS_TOTAL.dec();
-
-    {
-        state.remove_client(client_id, channel_id).await?;
-    }
+    state.disconnect(client)?;
 
     Ok(())
 }
@@ -100,9 +92,7 @@ pub async fn client_run(
     let codec_version = { state.check_codec().await? };
 
     if let Some(codec_version) = codec_version {
-        {
-            client.send_message(MessageKind::CodecVersion, &codec_version).await?;
-        }
+        client.send_message(MessageKind::CodecVersion, &codec_version).await?;
     }
 
     {
@@ -119,7 +109,7 @@ pub async fn client_run(
     let user_state = { client.get_user_state() };
 
     {
-        match state.broadcast_message(MessageKind::UserState, &user_state).await {
+        match state.broadcast_message(MessageKind::UserState, &user_state) {
             Ok(_) => (),
             Err(e) => tracing::error!("failed to send user state: {:?}", e),
         }

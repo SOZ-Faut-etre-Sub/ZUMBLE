@@ -5,11 +5,11 @@ use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ChannelRemove, ChannelState, CodecVersion, UserRemove, Version};
 use crate::proto::{message_to_bytes, MessageKind};
+use crate::server::constants::MAX_CLIENTS;
 use crate::voice::{ServerBound, VoicePacket};
 use bytes::BytesMut;
-use dashmap::DashMap;
 use protobuf::Message;
-use std::collections::HashMap;
+use scc::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -61,24 +61,26 @@ impl CodecState {
 pub type ServerStateRef = Arc<ServerState>;
 
 pub struct ServerState {
-    pub clients: Arc<DashMap<u32, ClientRef>>,
-    pub clients_by_socket: Arc<DashMap<SocketAddr, ClientRef>>,
-    pub channels: DashMap<u32, Arc<Channel>>,
+    pub clients: HashMap<u32, ClientRef>,
+    pub clients_by_socket: HashMap<SocketAddr, ClientRef>,
+    pub channels: HashMap<u32, Arc<Channel>>,
     pub codec_state: Arc<RwLock<CodecState>>,
     pub socket: Arc<UdpSocket>,
 }
 
 impl ServerState {
     pub fn new(socket: Arc<UdpSocket>) -> Self {
-        let channels = DashMap::new();
-        channels.insert(
+        let channels = HashMap::new();
+        channels.upsert(
             0,
             Arc::new(Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false)),
         );
 
         Self {
-            clients: Arc::new(DashMap::new()),
-            clients_by_socket: Arc::new(DashMap::new()),
+            // we preallocate the maximum amount of clients to prevent the possibility of resizes
+            // later, which will prevent double-sends in certain situations
+            clients: HashMap::with_capacity(MAX_CLIENTS),
+            clients_by_socket: HashMap::with_capacity(MAX_CLIENTS),
             channels,
             codec_state: Arc::new(RwLock::new(CodecState::default())),
             socket,
@@ -106,7 +108,8 @@ impl ServerState {
             publisher,
         ));
 
-        self.clients.insert(session_id, client.clone());
+        crate::metrics::CLIENTS_TOTAL.inc();
+        self.clients.upsert(session_id, client.clone());
 
         client
     }
@@ -123,61 +126,51 @@ impl ServerState {
 
         tracing::debug!("Created channel {} with name {}", channel_id, state.get_name().to_string());
 
-        self.channels.insert(channel_id, channel.clone());
+        self.channels.upsert(channel_id, channel.clone());
 
         channel
     }
 
     pub fn get_client_by_name(&self, name: &str) -> Option<ClientRef> {
-        for client in self.clients.iter() {
-            {
-                if client.authenticate.get_username() == name {
-                    return Some(client.clone());
-                }
-            }
+        let client = self.clients.any_entry(|_k, client| client.authenticate.get_username() == name);
+
+        if let Some(cl) = client {
+            return Some(cl.clone());
         }
 
         None
     }
 
     pub async fn set_client_socket(&self, client: ClientRef, addr: SocketAddr) {
-        {
-            let socket_lock = client.udp_socket_addr.read().await;
-            if let Some(exiting_addr) = *socket_lock {
-                self.clients_by_socket.remove(&exiting_addr);
-            }
+        let socket_lock = client.udp_socket_addr.swap(Some(Arc::new(addr)));
+        if let Some(exiting_addr) = socket_lock {
+            self.clients_by_socket.remove(exiting_addr.as_ref());
         }
 
-        {
-            *client.udp_socket_addr.write().await = Some(addr);
-        }
-
-        self.clients_by_socket.insert(addr, client);
+        self.clients_by_socket.upsert(addr, client);
     }
 
-    pub async fn broadcast_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
+    pub fn broadcast_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
         tracing::trace!("broadcast message: {:?}, {:?}", std::any::type_name::<T>(), message);
 
         let bytes = message_to_bytes(kind, message)?;
 
-        for client in self.clients.iter() {
-            {
-                match client.publisher.try_send(ClientMessage::SendMessage {
-                    kind,
-                    payload: bytes.clone(),
-                }) {
-                    Ok(_) => {}
-                    Err(err) => {
-                        tracing::error!("failed to send message to {}: {}", client.authenticate.get_username(), err);
-                    }
+        self.clients.scan(|_k, client| {
+            match client.publisher.try_send(ClientMessage::SendMessage {
+                kind,
+                payload: bytes.clone(),
+            }) {
+                Ok(_) => {}
+                Err(err) => {
+                    tracing::error!("failed to send message to {}: {}", client.authenticate.get_username(), err);
                 }
-            }
-        }
+            };
+        });
 
         Ok(())
     }
 
-    async fn handle_client_left_channel(&self, client_session: u32, leave_channel_id: u32) -> Option<u32> {
+    fn handle_client_left_channel(&self, client_session: u32, leave_channel_id: u32) -> Option<u32> {
         if let Some(channel) = self.channels.get(&leave_channel_id) {
             // remove the client from the channel
             channel.clients.remove(&client_session);
@@ -199,57 +192,53 @@ impl ServerState {
 
         self.channels.remove(&leave_channel_id);
 
-        match self.broadcast_message(MessageKind::ChannelRemove, &channel_remove).await {
+        match self.broadcast_message(MessageKind::ChannelRemove, &channel_remove) {
             Ok(_) => (),
             Err(e) => tracing::error!("failed to send channel remove: {:?}", e),
         }
 
-
         Some(leave_channel_id)
     }
 
-    pub async fn set_client_channel(&self, client: ClientRef, channel: ChannelRef) {
+    pub fn set_client_channel(&self, client: ClientRef, channel: &Channel) {
         let leave_channel_id = { client.join_channel(channel.id) };
 
-        channel.get_clients().insert(client.session_id, client.clone());
+        channel.get_clients().upsert(client.session_id, client.clone());
 
         if let Some(leave_channel_id) = leave_channel_id {
             // Broadcast new user state
-            let user_state = { client.get_user_state() };
+            let user_state = client.get_user_state();
 
-            match self.broadcast_message(MessageKind::UserState, &user_state).await {
+            match self.broadcast_message(MessageKind::UserState, &user_state) {
                 Ok(_) => (),
                 Err(e) => tracing::error!("failed to send user state: {:?}", e),
             }
 
-            self.handle_client_left_channel(client.session_id, leave_channel_id).await;
+            self.handle_client_left_channel(client.session_id, leave_channel_id);
         }
     }
 
-    pub async fn get_channel_by_name(&self, name: &str) -> Result<Option<ChannelRef>, MumbleError> {
-        for channel in self.channels.iter() {
-            {
-                if channel.name == name {
-                    return Ok(Some(channel.clone()));
-                }
-            }
+    pub fn get_channel_by_name(&self, name: &str) -> Option<ChannelRef> {
+        let client = self.channels.any_entry(|_k, channel| channel.name == name);
+
+        if let Some(cl) = client {
+            return Some(cl.clone());
         }
 
-        Ok(None)
+        None
     }
 
+    // TODO: Check what this does or if this is even needed (we should always use opus)
     pub async fn check_codec(&self) -> Result<Option<CodecVersion>, MumbleError> {
         let current_version = { self.codec_state.read().await.get_version() };
         let mut new_version = current_version;
-        let mut versions = HashMap::new();
+        let mut versions = std::collections::HashMap::new();
 
-        for client in self.clients.iter() {
-            {
-                for version in &client.codecs {
-                    *versions.entry(*version).or_insert(0) += 1;
-                }
+        self.clients.scan(|_, client| {
+            for version in &client.codecs {
+                *versions.entry(*version).or_insert(0) += 1;
             }
-        }
+        });
 
         let mut max = 0;
 
@@ -277,7 +266,7 @@ impl ServerState {
             codec_state.get_codec_version()
         };
 
-        match self.broadcast_message(MessageKind::CodecVersion, &codec_version).await {
+        match self.broadcast_message(MessageKind::CodecVersion, &codec_version) {
             Ok(_) => (),
             Err(e) => {
                 tracing::error!("failed to broadcast codec version: {:?}", e);
@@ -295,77 +284,74 @@ impl ServerState {
         self.clients_by_socket.remove(socket_addr);
     }
 
-    pub async fn find_client_for_packet(
+    pub async fn find_client_with_decrypt(
         &self,
         bytes: &mut BytesMut,
-    ) -> Result<(Option<ClientRef>, Option<VoicePacket<ServerBound>>, Vec<SocketAddr>), MumbleError> {
-        let mut address_to_remove = Vec::new();
+    ) -> Result<(Option<ClientRef>, Option<VoicePacket<ServerBound>>), MumbleError> {
 
-        for c in self.clients.iter() {
-            let crypt_state = { c.crypt_state.clone() };
+        let mut iter = self.clients.first_entry();
+        while let Some(c) = iter {
             let mut try_buf = bytes.clone();
-            let decrypt_result = { crypt_state.write().await.decrypt(&mut try_buf) };
+            let (decrypt_result, last_good) = {
+                let mut crypt_state = c.crypt_state.lock();
+                (crypt_state.decrypt(&mut try_buf), crypt_state.last_good)
+            };
 
             match decrypt_result {
                 Ok(p) => {
-                    return Ok((Some(c.clone()), Some(p), address_to_remove));
+                    return Ok((Some(c.clone()), Some(p)));
                 }
                 Err(err) => {
-                    let duration = { Instant::now().duration_since(crypt_state.read().await.last_good).as_millis() };
+                    let duration = { Instant::now().duration_since(last_good).as_millis() };
 
                     // last good packet was more than 5sec ago, reset
                     if duration > 5000 {
-                        let send_crypt_setup = { c.send_crypt_setup(true).await };
+                        let send_crypt_setup = c.send_crypt_setup(true);
 
-                        if let Err(e) = send_crypt_setup {
+                        if let Err(e) = send_crypt_setup.await {
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
 
-                        {
-                            let mut address_option = c.udp_socket_addr.write().await;
-
-                            if let Some(address) = *address_option {
-                                address_to_remove.push(address);
-
-                                *address_option = None;
-                            }
-                        }
+                        c.remove_client_udp_socket(self);
                     }
 
                     tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
                 }
             }
+            iter = c.next();
         }
 
-        Ok((None, None, address_to_remove))
+        Ok((None, None))
     }
 
-    pub async fn disconnect(&self, client: ClientRef) -> Result<(u32, u32), MumbleError> {
-        let client_id = { client.session_id };
+    pub fn disconnect(&self, client: ClientRef) -> Result<(u32, u32), MumbleError> {
+        crate::metrics::CLIENTS_TOTAL.dec();
+
+        let client_id = client.session_id;
 
         self.clients.remove(&client_id);
 
-        {
-            let socket_addr = { client.udp_socket_addr.read().await };
+        let socket = client.udp_socket_addr.swap(None);
 
-            if let Some(socket_addr) = *socket_addr {
-                self.clients_by_socket.remove(&socket_addr);
-            }
+        if let Some(socket_addr) = socket {
+            self.remove_client_by_socket(&socket_addr);
         }
 
-        let channel_id = { client.channel_id.load(Ordering::Relaxed) };
+        let channel_id = client.channel_id.load(Ordering::Relaxed);
+
+        self.broadcast_client_delete(client_id, channel_id)?;
 
         Ok((client_id, channel_id))
     }
 
-    pub async fn remove_client(&self, client_id: u32, channel_id: u32) -> Result<(), MumbleError> {
+    fn broadcast_client_delete(&self, client_id: u32, channel_id: u32) -> Result<(), MumbleError> {
         let mut remove = UserRemove::new();
         remove.set_session(client_id);
         remove.set_reason("disconnected".to_string());
 
-        self.broadcast_message(MessageKind::UserRemove, &remove).await?;
+        self.broadcast_message(MessageKind::UserRemove, &remove)?;
 
-        self.handle_client_left_channel(client_id, channel_id).await;
+        self.handle_client_left_channel(client_id, channel_id);
 
         Ok(())
     }
@@ -374,7 +360,7 @@ impl ServerState {
         let mut session_id = 1;
 
         loop {
-            if self.clients.contains_key(&session_id) {
+            if self.clients.contains(&session_id) {
                 session_id += 1;
             } else {
                 break;
@@ -388,7 +374,7 @@ impl ServerState {
         let mut channel_id = 1;
 
         loop {
-            if self.channels.contains_key(&channel_id) {
+            if self.channels.contains(&channel_id) {
                 channel_id += 1;
             } else {
                 break;

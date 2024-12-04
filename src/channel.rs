@@ -1,4 +1,5 @@
-use dashmap::DashMap;
+
+use scc::HashMap;
 
 use crate::client::{ClientRef};
 use crate::proto::mumble::ChannelState;
@@ -13,8 +14,8 @@ pub struct Channel {
     // unused, the client will get this via ChannelState anyways
     // pub description: String,
     pub temporary: bool,
-    pub listeners: Arc<DashMap<u32, ClientRef>>,
-    pub clients: Arc<DashMap<u32, ClientRef>>,
+    pub listeners: HashMap<u32, ClientRef>,
+    pub clients: HashMap<u32, ClientRef>,
     channel_state_cache: Arc<ChannelState>,
 }
 
@@ -40,8 +41,8 @@ impl Channel {
             name,
             // description,
             temporary,
-            clients: Arc::new(DashMap::new()),
-            listeners: Arc::new(DashMap::new()),
+            clients: HashMap::new(),
+            listeners: HashMap::new(),
         }
     }
 
@@ -49,11 +50,11 @@ impl Channel {
         self.channel_state_cache.clone()
     }
 
-    pub fn get_listeners(&self) -> Arc<DashMap<u32, ClientRef>> {
-        self.listeners.clone()
+    pub fn get_listeners(&self) -> &HashMap<u32, ClientRef> {
+        &self.listeners
     }
 
-    pub fn get_clients(&self) -> Arc<DashMap<u32, ClientRef>> {
-        self.clients.clone()
+    pub fn get_clients(&self) -> &HashMap<u32, ClientRef> {
+        &self.clients
     }
 }

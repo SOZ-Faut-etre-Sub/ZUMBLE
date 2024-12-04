@@ -1,11 +1,12 @@
-use crate::client::{ClientRef};
+use crate::client::ClientRef;
 use crate::error::MumbleError;
-use crate::handler::Handler;
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
 use crate::voice::{ClientBound, VoicePacket};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
+
+use super::Handler;
 
 impl Handler for VoicePacket<ClientBound> {
     async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
@@ -25,11 +26,9 @@ impl Handler for VoicePacket<ClientBound> {
                     let channel_result = { state.channels.get(&channel_id) };
 
                     if let Some(channel) = channel_result {
-                        {
-                            for data in channel.get_listeners().iter() {
-                                listening_clients.insert(*data.key(), data.value().clone());
-                            }
-                        }
+                        channel.get_clients().scan(|k, v| {
+                            listening_clients.insert(*k, v.clone());
+                        });
                     }
                 }
                 // Voice target (whisper)
@@ -37,29 +36,29 @@ impl Handler for VoicePacket<ClientBound> {
                     let target = { client.get_target(*target) };
 
                     if let Some(target) = target {
-                        for client_id in target.sessions.iter() {
-                            let client_result = { state.clients.get(&client_id) };
+                        target.sessions.scan(|client_id| {
+                            let client_result = { state.clients.get(client_id) };
 
                             if let Some(client) = client_result {
-                                listening_clients.insert(*client_id.key(), client.value().clone());
+                                listening_clients.insert(*client_id, client.clone());
                             }
-                        }
+                        });
 
-                        for channel_id in target.channels.iter() {
-                            let channel_result = { state.channels.get(&channel_id) };
+                        target.channels.scan(|channel_id| {
+                            let channel_result = { state.channels.get(channel_id) };
 
                             if let Some(channel) = channel_result {
                                 {
-                                    for data in channel.get_listeners().iter() {
-                                        listening_clients.insert(*data.key(), data.value().clone());
-                                    }
+                                    channel.get_listeners().scan(|k, v| {
+                                        listening_clients.insert(*k, v.clone());
+                                    });
 
-                                    for data in channel.get_clients().iter() {
-                                        listening_clients.insert(*data.key(), data.value().clone());
-                                    }
+                                    channel.get_clients().scan(|k, v| {
+                                        listening_clients.insert(*k, v.clone());
+                                    });
                                 }
                             }
-                        }
+                        });
                     }
                 }
                 // Loopback

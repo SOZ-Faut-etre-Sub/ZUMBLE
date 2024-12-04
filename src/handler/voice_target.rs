@@ -3,7 +3,6 @@ use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::VoiceTarget;
 use crate::state::ServerStateRef;
-use std::collections::HashSet;
 
 impl Handler for VoiceTarget {
     async fn handle(&self, _: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
@@ -23,30 +22,18 @@ impl Handler for VoiceTarget {
             }
         };
 
-        let mut sessions = HashSet::new();
-        let mut channels = HashSet::new();
 
         for target_item in self.get_targets() {
-            for session in target_item.get_session() {
-                sessions.insert(*session);
-            }
-
-            if target_item.has_channel_id() {
-                channels.insert(target_item.get_channel_id());
-            }
-        }
-
-        {
             target.sessions.clear();
-            target.channels.clear();
-
-            // can't use extend here
-            for v in sessions {
-                target.sessions.insert(v);
+            for session in target_item.get_session() {
+                // we clear this above, we won't run into duplicate inserts.
+                let _ = target.sessions.insert(*session);
             }
 
-            for v in channels {
-                target.channels.insert(v);
+            target.channels.clear();
+            if target_item.has_channel_id() {
+                // we clear this above, we won't run into duplicate inserts.
+                let _ = target.channels.insert(target_item.get_channel_id());
             }
         }
 

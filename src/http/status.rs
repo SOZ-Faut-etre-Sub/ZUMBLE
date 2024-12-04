@@ -29,7 +29,8 @@ pub struct MumbleTarget {
 #[actix_web::get("/status")]
 pub async fn get_status(state: web::Data<ServerStateRef>) -> Result<HttpResponse, MumbleError> {
     let mut clients = HashMap::new();
-    for client in state.clients.iter() {
+    let mut iter = state.clients.first_entry_async().await;
+    while let Some(client) = iter {
         let session = client.session_id;
         let channel_id = { client.channel_id.load(Ordering::Relaxed) };
         let channel = { state.channels.get(&channel_id) };
@@ -42,34 +43,44 @@ pub async fn get_status(state: web::Data<ServerStateRef>) -> Result<HttpResponse
         };
 
         {
-            let crypt_state = client.crypt_state.read().await;
+            let (good, late, lost, resync, last_good) = {
+                let crypt = client.crypt_state.lock();
+                (crypt.good, crypt.late, crypt.lost, crypt.resync, crypt.last_good)
+            };
 
             let mut mumble_client = MumbleClient {
                 name: client.authenticate.get_username().to_string(),
                 session_id: client.session_id,
                 channel: channel_name,
                 mute: client.is_muted(),
-                good: crypt_state.good,
-                late: crypt_state.late,
-                lost: crypt_state.lost,
-                resync: crypt_state.resync,
-                last_good_duration: Instant::now().duration_since(crypt_state.last_good).as_millis(),
+                good,
+                late,
+                lost,
+                resync,
+                last_good_duration: Instant::now().duration_since(last_good).as_millis(),
                 targets: Vec::new(),
             };
 
             for target in &client.targets {
-                let mumble_target = {
-                    MumbleTarget {
-                        sessions: target.sessions.iter().map(|v| *v.key()).collect(),
-                        channels: target.channels.iter().map(|v| *v.key()).collect(),
-                    }
-                };
+                let mut sessions = HashSet::new();
+                let mut channels = HashSet::new();
+
+                target.sessions.scan(|v| {
+                    sessions.insert(*v);
+                });
+
+                target.channels.scan(|v| {
+                    channels.insert(*v);
+                });
+
+                let mumble_target = { MumbleTarget { sessions, channels } };
 
                 mumble_client.targets.push(mumble_target);
             }
 
             clients.insert(session, mumble_client);
         }
+        iter = client.next_async().await;
     }
 
     Ok(HttpResponse::Ok().json(&clients))

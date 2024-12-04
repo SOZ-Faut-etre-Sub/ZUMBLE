@@ -37,13 +37,13 @@ impl Handler for ChannelState {
             return Ok(());
         }
 
-        if !state.channels.contains_key(&self.get_parent()) {
+        if !state.channels.contains(&self.get_parent()) {
             tracing::warn!("cannot create channel: parent channel does not exist");
 
             return Ok(());
         }
 
-        let existing_channel = state.get_channel_by_name(name).await?;
+        let existing_channel = state.get_channel_by_name(name);
         if existing_channel.is_some() {
 
             return Ok(());
@@ -54,10 +54,10 @@ impl Handler for ChannelState {
 
         {
             tracing::debug!("Created channel {}, requested by {}", channel.id, client.session_id);
-            state.broadcast_message(MessageKind::ChannelState, channel_state.as_ref()).await?;
+            state.broadcast_message(MessageKind::ChannelState, channel_state.as_ref());
         }
 
-        state.set_client_channel(client, channel).await;
+        state.set_client_channel(client, &channel);
 
         Ok(())
     }
