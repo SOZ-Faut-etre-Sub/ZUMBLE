@@ -22,15 +22,15 @@ impl Handler for VoiceTarget {
             }
         };
 
+        target.sessions.clear();
+        target.channels.clear();
 
         for target_item in self.get_targets() {
-            target.sessions.clear();
             for session in target_item.get_session() {
                 // we clear this above, we won't run into duplicate inserts.
                 let _ = target.sessions.insert(*session);
             }
 
-            target.channels.clear();
             if target_item.has_channel_id() {
                 // we clear this above, we won't run into duplicate inserts.
                 let _ = target.channels.insert(target_item.get_channel_id());
