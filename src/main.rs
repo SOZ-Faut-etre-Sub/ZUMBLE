@@ -107,8 +107,8 @@ async fn main() {
     tracing::info!("tcp/udp server start listening on {}", args.listen);
     tracing::info!("http server start listening on {}", args.http_listen);
 
-    // Simulate 1.2.4 protocol version
-    let version = 1 << 16 | 2 << 8 | 4;
+    // Simulate 1.4.0 protocol version
+    let version = 1 << 16 | 4 << 8 | 0;
 
     let mut server_version = Version::new();
     server_version.set_os(std::env::consts::FAMILY.to_string());
