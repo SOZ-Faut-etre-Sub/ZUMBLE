@@ -107,9 +107,11 @@ impl Client {
     }
 
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {
-        let mut lock = self.write.lock().await;
-        match lock.write_all(data).await {
-            Ok(_bytes) => Ok(()),
+        let mut writer = self.write.lock().await;
+        match writer.write_all(data).await {
+            Ok(_bytes) => {
+                Ok(())
+            }
             Err(e) => Err(e.into()),
         }
     }
@@ -190,7 +192,7 @@ impl Client {
         while let Some(channel) = iter {
             let channel_state = { channel.get_channel_state() };
 
-            let _ = self.send_message(MessageKind::ChannelState, channel_state.as_ref());
+            self.send_message(MessageKind::ChannelState, channel_state.as_ref()).await?;
 
             iter = channel.next_async().await;
         }
@@ -200,7 +202,7 @@ impl Client {
         while let Some(client) = iter {
             let user_state = client.get_user_state();
 
-            let _ = self.send_message(MessageKind::UserState, &user_state);
+            self.send_message(MessageKind::UserState, &user_state).await?;
 
             iter = client.next_async().await;
         }

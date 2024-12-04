@@ -52,7 +52,7 @@ async fn handle_packet(
     let mut cursor = Cursor::new(&buffer[..size]);
     let kind = cursor.read_u32::<byteorder::LittleEndian>()?;
 
-    // respond to the ping packet
+    // respond to the server list ping packet
     if size == 12 && kind == 0 {
         let timestamp = cursor.read_u64::<byteorder::LittleEndian>()?;
 
@@ -126,6 +126,8 @@ async fn handle_packet(
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
 
+                        state.clients_without_udp.upsert(client.session_id, client.clone());
+
                         client.remove_client_udp_socket(&state);
                     }
 
@@ -134,16 +136,12 @@ async fn handle_packet(
             }
         }
         None => {
-            let (client_opt, packet_opt) = state.find_client_with_decrypt(&mut buffer).await?;
+            let (client_opt, packet_opt) = state.find_client_with_decrypt(&mut buffer, addr).await?;
 
             match (client_opt, packet_opt) {
                 (Some(client), Some(packet)) => {
                     {
                         tracing::info!("UPD connected client {} on {}", client.authenticate.get_username(), addr);
-                    }
-
-                    {
-                        state.set_client_socket(client.clone(), addr).await;
                     }
 
                     (client, packet)

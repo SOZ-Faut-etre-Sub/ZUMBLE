@@ -14,17 +14,18 @@ pub async fn clean_loop(state: ServerStateRef) {
             }
         }
 
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 }
 
 async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
-    let mut client_to_delete = Vec::new();
+    let mut client_to_disconnect = Vec::new();
+    let mut clients_to_remove = Vec::new();
 
-    state.clients.retain(|_, client| {
-        // if we don't have a publisher then we just want to remove the client
+    let mut iter = state.clients_by_socket.first_entry();
+    while let Some(client) = iter {
         if client.publisher.is_closed() {
-            return false;
+            clients_to_remove.push(client.session_id);
         }
 
         let now = Instant::now();
@@ -32,13 +33,23 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
         let duration = now.duration_since(client.last_ping.load());
 
         if duration.as_secs() > 30 {
-            client_to_delete.push(client.clone());
+            client_to_disconnect.push(client.clone());
         }
 
-        true
-    });
+        let last_good = {
+            client.crypt_state.lock().last_good
+        };
 
-    for client in client_to_delete {
+        if now.duration_since(last_good).as_millis() > 5000 {
+            if let Err(e) = client.send_crypt_setup(true).await {
+                tracing::error!("failed to send crypt setup for {}: {:?}", e, client.session_id);
+            }
+        }
+
+        iter = client.next();
+    }
+
+    for client in client_to_disconnect {
         let username = { client.authenticate.get_username().to_string() };
 
         match client.publisher.try_send(ClientMessage::Disconnect) {
@@ -47,6 +58,10 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
                 tracing::error!("error sending disconnect signal to {}: {}", username, err);
             }
         }
+    }
+
+    for session_id in clients_to_remove {
+        state.remove_client_by_session_id(session_id);
     }
 
     Ok(())
