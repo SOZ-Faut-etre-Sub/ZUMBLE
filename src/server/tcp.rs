@@ -67,7 +67,7 @@ async fn handle_new_client(
     let (tx, rx) = mpsc::channel(MAX_MTU);
 
     let username = authenticate.get_username().to_string();
-    let client = { state.add_client(version, authenticate, crypt_state, write, tx) };
+    let client = state.add_client(version, authenticate, crypt_state, write, tx);
 
     tracing::info!("new client {} connected", username);
 
@@ -78,7 +78,7 @@ async fn handle_new_client(
 
     tracing::info!("client {} disconnected", username);
 
-    state.disconnect(client)?;
+    state.disconnect(client);
 
     Ok(())
 }

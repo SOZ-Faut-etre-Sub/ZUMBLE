@@ -11,7 +11,7 @@ use bytes::BytesMut;
 use protobuf::Message;
 use scc::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::WriteHalf;
@@ -62,10 +62,13 @@ pub type ServerStateRef = Arc<ServerState>;
 
 pub struct ServerState {
     pub clients: HashMap<u32, ClientRef>,
+    pub clients_without_udp: HashMap<u32, ClientRef>,
     pub clients_by_socket: HashMap<SocketAddr, ClientRef>,
     pub channels: HashMap<u32, Arc<Channel>>,
     pub codec_state: Arc<RwLock<CodecState>>,
     pub socket: Arc<UdpSocket>,
+    session_count: AtomicU32,
+    channel_count: AtomicU32
 }
 
 impl ServerState {
@@ -80,10 +83,13 @@ impl ServerState {
             // we preallocate the maximum amount of clients to prevent the possibility of resizes
             // later, which will prevent double-sends in certain situations
             clients: HashMap::with_capacity(MAX_CLIENTS),
+            clients_without_udp: HashMap::with_capacity(MAX_CLIENTS),
             clients_by_socket: HashMap::with_capacity(MAX_CLIENTS),
             channels,
             codec_state: Arc::new(RwLock::new(CodecState::default())),
             socket,
+            session_count: AtomicU32::new(1),
+            channel_count: AtomicU32::new(1),
         }
     }
 
@@ -110,8 +116,16 @@ impl ServerState {
 
         crate::metrics::CLIENTS_TOTAL.inc();
         self.clients.upsert(session_id, client.clone());
+        self.clients_without_udp.upsert(session_id, client.clone());
 
         client
+    }
+
+    pub fn remove_client_by_session_id(&self, session_id: u32) {
+        let client = self.clients.get(&session_id);
+        if let Some(client) = client {
+            self.disconnect(client.clone());
+        }
     }
 
     pub fn add_channel(&self, state: &ChannelState) -> ChannelRef {
@@ -141,7 +155,7 @@ impl ServerState {
         None
     }
 
-    pub async fn set_client_socket(&self, client: ClientRef, addr: SocketAddr) {
+    pub fn set_client_socket(&self, client: ClientRef, addr: SocketAddr) {
         let socket_lock = client.udp_socket_addr.swap(Some(Arc::new(addr)));
         if let Some(exiting_addr) = socket_lock {
             self.clients_by_socket.remove(exiting_addr.as_ref());
@@ -176,7 +190,6 @@ impl ServerState {
             channel.clients.remove(&client_session);
 
             if channel.parent_id.is_none() {
-                println!("channel {} had no parent, could be root", channel.id);
                 return None;
             };
 
@@ -287,10 +300,17 @@ impl ServerState {
     pub async fn find_client_with_decrypt(
         &self,
         bytes: &mut BytesMut,
+        addr: SocketAddr
     ) -> Result<(Option<ClientRef>, Option<VoicePacket<ServerBound>>), MumbleError> {
 
-        let mut iter = self.clients.first_entry();
-        while let Some(c) = iter {
+        let mut client = None;
+        let mut packet: Option<VoicePacket<ServerBound>> = None;
+
+        self.clients_without_udp.scan(|_, c| {
+            // we don't have a way to early return out of a scan so if we *have* a client we should
+            // just continue and not try to decrypt
+            if client.is_some() { return; }
+
             let mut try_buf = bytes.clone();
             let (decrypt_result, last_good) = {
                 let mut crypt_state = c.crypt_state.lock();
@@ -299,37 +319,44 @@ impl ServerState {
 
             match decrypt_result {
                 Ok(p) => {
-                    return Ok((Some(c.clone()), Some(p)));
+                    self.set_client_socket(c.clone(), addr);
+                    client = Some(c.clone());
+                    packet = Some(p);
                 }
                 Err(err) => {
-                    let duration = { Instant::now().duration_since(last_good).as_millis() };
-
-                    // last good packet was more than 5sec ago, reset
-                    if duration > 5000 {
-                        let send_crypt_setup = c.send_crypt_setup(true);
-
-                        if let Err(e) = send_crypt_setup.await {
-                            tracing::error!("failed to send crypt setup: {:?}", e);
-                        }
-
-                        c.remove_client_udp_socket(self);
-                    }
-
+                    // NOTE: Moved to to clean.rs, left for here for now
+                    // let duration = { Instant::now().duration_since(last_good).as_millis() };
+                    //
+                    // // last good packet was more than 5sec ago, reset
+                    // if duration > 5000 {
+                    //     let send_crypt_setup = client.send_crypt_setup(true);
+                    //
+                    //     if let Err(e) = send_crypt_setup.await {
+                    //         tracing::error!("failed to send crypt setup: {:?}", e);
+                    //     }
+                    //
+                    //     client.remove_client_udp_socket(self);
+                    // }
+                    //
                     tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
                 }
             }
-            iter = c.next();
+        });
+
+        if let Some(ref client) = client {
+            self.clients_without_udp.remove(&client.session_id);
         }
 
-        Ok((None, None))
+        Ok((client, packet))
     }
 
-    pub fn disconnect(&self, client: ClientRef) -> Result<(u32, u32), MumbleError> {
+    pub fn disconnect(&self, client: ClientRef) {
         crate::metrics::CLIENTS_TOTAL.dec();
 
         let client_id = client.session_id;
 
         self.clients.remove(&client_id);
+        self.clients_without_udp.remove(&client_id);
 
         let socket = client.udp_socket_addr.swap(None);
 
@@ -339,48 +366,26 @@ impl ServerState {
 
         let channel_id = client.channel_id.load(Ordering::Relaxed);
 
-        self.broadcast_client_delete(client_id, channel_id)?;
-
-        Ok((client_id, channel_id))
+        self.broadcast_client_delete(client_id, channel_id);
     }
 
-    fn broadcast_client_delete(&self, client_id: u32, channel_id: u32) -> Result<(), MumbleError> {
+    fn broadcast_client_delete(&self, client_id: u32, channel_id: u32) {
         let mut remove = UserRemove::new();
         remove.set_session(client_id);
         remove.set_reason("disconnected".to_string());
 
-        self.broadcast_message(MessageKind::UserRemove, &remove)?;
+        let _ = self.broadcast_message(MessageKind::UserRemove, &remove);
 
         self.handle_client_left_channel(client_id, channel_id);
 
-        Ok(())
     }
 
+    // TODO: this can still wrap and overwrite existing sessions, though its very unlikely
     fn get_free_session_id(&self) -> u32 {
-        let mut session_id = 1;
-
-        loop {
-            if self.clients.contains(&session_id) {
-                session_id += 1;
-            } else {
-                break;
-            }
-        }
-
-        session_id
+        self.session_count.fetch_add(1, Ordering::SeqCst)
     }
 
     fn get_free_channel_id(&self) -> u32 {
-        let mut channel_id = 1;
-
-        loop {
-            if self.channels.contains(&channel_id) {
-                channel_id += 1;
-            } else {
-                break;
-            }
-        }
-
-        channel_id
+        self.channel_count.fetch_add(1, Ordering::SeqCst)
     }
 }
