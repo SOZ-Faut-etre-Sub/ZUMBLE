@@ -4,20 +4,21 @@ use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UDPTunnel, UserState, Version};
 use crate::proto::{expected_message, message_to_bytes, send_message, MessageKind};
 use crate::server::constants::MAX_BANDWIDTH;
-use crate::state::ServerStateRef;
+use crate::state::{ServerState, ServerStateRef};
 use crate::target::VoiceTarget;
 use crate::voice::{encode_voice_packet, ClientBound, VoicePacket};
+use arc_swap::ArcSwapOption;
 use bytes::BytesMut;
+use crossbeam::atomic::AtomicCell;
+use parking_lot::Mutex;
 use protobuf::Message;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
-use tokio::sync::RwLock;
-use tokio::time::timeout;
 use tokio_rustls::server::TlsStream;
 
 pub type ClientRef = Arc<Client>;
@@ -31,16 +32,16 @@ pub struct Client {
     pub channel_id: AtomicU32,
     pub mute: AtomicBool,
     pub deaf: AtomicBool,
-    pub write: RwLock<WriteHalf<TlsStream<TcpStream>>>,
+    pub write: tokio::sync::Mutex<WriteHalf<TlsStream<TcpStream>>>,
     // pub tokens: Vec<String>,
-    pub crypt_state: Arc<RwLock<CryptState>>,
-    pub udp_socket_addr: RwLock<Option<SocketAddr>>,
+    pub crypt_state: Mutex<CryptState>,
+    pub udp_socket_addr: ArcSwapOption<SocketAddr>,
     // pub use_opus: bool,
     pub codecs: Vec<i32>,
     pub udp_socket: Arc<UdpSocket>,
     pub publisher: Sender<ClientMessage>,
     pub targets: VoiceTargetArray,
-    pub last_ping: RwLock<Instant>,
+    pub last_ping: AtomicCell<Instant>,
 }
 
 impl Client {
@@ -82,19 +83,19 @@ impl Client {
             // version,
             session_id,
             channel_id: AtomicU32::new(channel_id),
-            crypt_state: Arc::new(RwLock::new(crypt_state)),
-            write: RwLock::new(write),
+            crypt_state: Mutex::new(crypt_state),
+            write: tokio::sync::Mutex::new(write),
             // tokens,
             deaf: AtomicBool::new(false),
             mute: AtomicBool::new(false),
-            udp_socket_addr: RwLock::new(None),
+            udp_socket_addr: ArcSwapOption::from(None),
             // use_opus: if authenticate.has_opus() { authenticate.get_opus() } else { false },
             codecs: authenticate.get_celt_versions().to_vec(),
             authenticate,
             udp_socket,
             publisher,
             targets,
-            last_ping: RwLock::new(Instant::now()),
+            last_ping: AtomicCell::new(Instant::now()),
         }
     }
 
@@ -106,10 +107,10 @@ impl Client {
     }
 
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {
-        match timeout(Duration::from_secs(1), self.write.write().await.write_all(data)).await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(e)) => Err(MumbleError::Io(e)),
-            Err(_) => Err(MumbleError::Timeout),
+        let mut lock = self.write.lock().await;
+        match lock.write_all(data).await {
+            Ok(_bytes) => Ok(()),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -153,14 +154,26 @@ impl Client {
         Ok(())
     }
 
-    pub async fn send_crypt_setup(&self, reset: bool) -> Result<(), MumbleError> {
-        if reset {
-            {
-                self.crypt_state.write().await.reset();
-            }
-        }
+    /// Removes the UDP socket from the client and removes it from the server list of sockets
+    pub fn remove_client_udp_socket(&self, state: &ServerState) {
+        // swap the udp socket address for none so we don't keep a copy
+        let address_option = self.udp_socket_addr.swap(None);
 
-        let crypt_setup = { self.crypt_state.read().await.get_crypt_setup() };
+        if let Some(address) = address_option {
+            // remove the socket
+            state.remove_client_by_socket(&address);
+        }
+    }
+
+    pub async fn send_crypt_setup(&self, reset: bool) -> Result<(), MumbleError> {
+        let crypt_setup = {
+            let mut crypt = self.crypt_state.lock();
+            if reset {
+                crypt.reset();
+            }
+
+            crypt.get_crypt_setup()
+        };
 
         self.send_message(MessageKind::CryptSetup, &crypt_setup).await
     }
@@ -172,20 +185,24 @@ impl Client {
     }
 
     pub async fn sync_client_and_channels(&self, state: &ServerStateRef) -> Result<(), MumbleError> {
-        {
-            // Send channel states
-            for channel in state.channels.iter() {
-                let channel_state = { channel.get_channel_state() };
+        // Send channel states
+        let mut iter = state.channels.first_entry_async().await;
+        while let Some(channel) = iter {
+            let channel_state = { channel.get_channel_state() };
 
-                self.send_message(MessageKind::ChannelState, channel_state.as_ref()).await?;
-            }
+            let _ = self.send_message(MessageKind::ChannelState, channel_state.as_ref());
 
-            // Send user states
-            for client in state.clients.iter() {
-                let user_state = client.get_user_state();
+            iter = channel.next_async().await;
+        }
 
-                self.send_message(MessageKind::UserState, &user_state).await?;
-            }
+        // send client sates
+        let mut iter = state.clients.first_entry_async().await;
+        while let Some(client) = iter {
+            let user_state = client.get_user_state();
+
+            let _ = self.send_message(MessageKind::UserState, &user_state);
+
+            iter = client.next_async().await;
         }
 
         Ok(())
@@ -210,17 +227,16 @@ impl Client {
     }
 
     pub async fn send_voice_packet(&self, packet: VoicePacket<ClientBound>) -> Result<(), MumbleError> {
-        if let Some(addr) = *self.udp_socket_addr.read().await {
+        if let Some(addr) = self.udp_socket_addr.load_full() {
             let mut dest = BytesMut::new();
-            self.crypt_state.write().await.encrypt(&packet, &mut dest);
+
+            {
+                self.crypt_state.lock().encrypt(&packet, &mut dest);
+            }
 
             let buf = &dest.freeze()[..];
 
-            match timeout(Duration::from_secs(1), self.udp_socket.send_to(buf, addr)).await {
-                Ok(Ok(_)) => Ok(()),
-                Ok(Err(e)) => Err(MumbleError::Io(e)),
-                Err(_) => Err(MumbleError::Timeout),
-            }?;
+            self.udp_socket.send_to(buf, addr.as_ref()).await?;
 
             crate::metrics::MESSAGES_TOTAL
                 .with_label_values(&["udp", "output", "VoicePacket"])

@@ -7,7 +7,7 @@ use crate::state::ServerStateRef;
 impl Handler for CryptSetup {
     async fn handle(&self, _state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         if self.has_client_nonce() {
-            client.crypt_state.write().await.set_decrypt_nonce(self.get_client_nonce());
+            client.crypt_state.lock().set_decrypt_nonce(self.get_client_nonce());
         } else {
             client.send_crypt_setup(false).await?;
         }

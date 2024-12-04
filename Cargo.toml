@@ -37,6 +37,11 @@ prometheus = { version  = "0.13.4", features = ["process"] }
 rustls-pki-types = "1.10.0"
 rcgen = { version = "0.13.1", features = ["aws_lc_rs"] }
 dashmap = "6.1.0"
+concurrent-map = "5.0.37"
+scc = "2.2.5"
+parking_lot = "0.12.3"
+arc-swap = "1.7.1"
+crossbeam = "0.8.4"
 
 [profile.release]
 codegen-units = 1

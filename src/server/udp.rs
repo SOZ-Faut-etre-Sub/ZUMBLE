@@ -2,6 +2,9 @@ use crate::error::DecryptError;
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
 use crate::voice::VoicePacket;
+
+use anyhow::anyhow;
+
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
 use std::io::Cursor;
@@ -35,7 +38,6 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Se
     Ok(())
 }
 
-
 async fn handle_packet(
     mut buffer: BytesMut,
     size: usize,
@@ -44,8 +46,11 @@ async fn handle_packet(
     socket: Arc<UdpSocket>,
     state: ServerStateRef,
 ) -> Result<(), anyhow::Error> {
+    if size <= 1 {
+        return Err(anyhow!("Invalid packet"));
+    }
     let mut cursor = Cursor::new(&buffer[..size]);
-    let kind = cursor.read_u32::<byteorder::BigEndian>()?;
+    let kind = cursor.read_u32::<byteorder::LittleEndian>()?;
 
     // respond to the ping packet
     if size == 12 && kind == 0 {
@@ -60,7 +65,7 @@ async fn handle_packet(
         // user count
         send.write_u32::<byteorder::BigEndian>(state.clients.len() as u32)?;
         // max user count
-        send.write_u32::<byteorder::BigEndian>(MAX_CLIENTS)?;
+        send.write_u32::<byteorder::BigEndian>(MAX_CLIENTS as u32)?;
         // max bandwidth per user
         send.write_u32::<byteorder::BigEndian>(MAX_BANDWIDTH)?;
 
@@ -83,7 +88,10 @@ async fn handle_packet(
         Some(client) => {
             // Send decrypt packet
 
-            let decrypt_result = { client.crypt_state.write().await.decrypt(&mut buffer) };
+            let decrypt_result = {
+                let mut crypt_state = client.crypt_state.lock();
+                crypt_state.decrypt(&mut buffer)
+            };
 
             match decrypt_result {
                 Ok(p) => (client, p),
@@ -101,7 +109,7 @@ async fn handle_packet(
 
                     let restart_crypt = match err {
                         DecryptError::Late => {
-                            let late = { client.crypt_state.read().await.late };
+                            let late = { client.crypt_state.lock().late };
 
                             late > 100
                         }
@@ -112,22 +120,13 @@ async fn handle_packet(
                     if restart_crypt {
                         tracing::error!("client {} udp decrypt error: {}, reset crypt setup", username, err);
 
-                        let send_crypt_setup = { client.send_crypt_setup(true).await };
+                        let send_crypt_setup = client.send_crypt_setup(true).await;
 
                         if let Err(e) = send_crypt_setup {
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
 
-                        let mut client_address = { client.udp_socket_addr.write().await };
-
-                        // Remove socket address from client
-                        if let Some(address) = *client_address {
-                            state.remove_client_by_socket(&address);
-
-                            {
-                                *client_address = None;
-                            };
-                        }
+                        client.remove_client_udp_socket(&state);
                     }
 
                     return Ok(());
@@ -135,11 +134,7 @@ async fn handle_packet(
             }
         }
         None => {
-            let (client_opt, packet_opt, address_to_remove) = { state.find_client_for_packet(&mut buffer).await? };
-
-            for address in address_to_remove {
-                state.remove_client_by_socket(&address);
-            }
+            let (client_opt, packet_opt) = state.find_client_with_decrypt(&mut buffer).await?;
 
             match (client_opt, packet_opt) {
                 (Some(client), Some(packet)) => {
@@ -186,7 +181,8 @@ async fn handle_packet(
             let mut dest = BytesMut::new();
 
             {
-                client.crypt_state.write().await.encrypt(&client_packet, &mut dest);
+                let mut crypt = client.crypt_state.lock();
+                crypt.encrypt(&client_packet, &mut dest);
             }
 
             let buf = &dest.freeze()[..];

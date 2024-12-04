@@ -1,4 +1,4 @@
-use crate::client::{ClientRef};
+use crate::client::ClientRef;
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::UserState;
@@ -12,29 +12,24 @@ impl Handler for UserState {
             return Ok(());
         }
 
-        {
-            client.update(self);
-        }
+        client.update(self);
 
         if self.has_channel_id() {
             if let Some(channel) = state.channels.get(&self.get_channel_id()) {
-                state.set_client_channel(client.clone(), channel.value().clone()).await;
+                state.set_client_channel(client.clone(), channel.as_ref());
             }
         }
 
         for channel_id in self.get_listening_channel_add() {
-            {
-                if let Some(channel) = state.channels.get(channel_id) {
-                    channel.listeners.insert(session_id, client.clone());
-                }
+            if let Some(channel) = state.channels.get(channel_id) {
+                // if this errors it means our client is already in it, we can just ignore.
+                let _ = channel.listeners.insert(session_id, client.clone());
             }
         }
 
         for channel_id in self.get_listening_channel_remove() {
-            {
-                if let Some(channel) = state.channels.get(channel_id) {
-                    channel.listeners.remove(&session_id);
-                }
+            if let Some(channel) = state.channels.get(channel_id) {
+                channel.listeners.remove(&session_id);
             }
         }
 

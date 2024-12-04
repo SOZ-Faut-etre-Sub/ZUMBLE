@@ -1,5 +1,6 @@
-use crate::message::ClientMessage;
 use thiserror::Error;
+
+use crate::message::ClientMessage;
 
 #[derive(Error, Debug)]
 pub enum MumbleError {
@@ -17,6 +18,8 @@ pub enum MumbleError {
     SendError(#[from] tokio::sync::mpsc::error::SendTimeoutError<ClientMessage>),
     #[error("timeout error")]
     Timeout,
+    #[error("failed to send message via UDP")]
+    UdpFailed 
 }
 
 impl actix_web::error::ResponseError for MumbleError {}

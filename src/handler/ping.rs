@@ -11,14 +11,12 @@ impl Handler for Ping {
         let mut ping = Ping::default();
         ping.set_timestamp(self.get_timestamp());
 
-        let crypt_state = { client.crypt_state.clone() };
-
         {
-            *client.last_ping.write().await = Instant::now();
+            client.last_ping.swap(Instant::now());
         }
 
         {
-            let crypt_state_read = crypt_state.read().await;
+            let crypt_state_read = client.crypt_state.lock();
             ping.set_good(crypt_state_read.good);
             ping.set_late(crypt_state_read.late);
             ping.set_lost(crypt_state_read.lost);
