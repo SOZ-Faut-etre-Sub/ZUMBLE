@@ -16,10 +16,8 @@ pub enum MumbleError {
     ForceDisconnect,
     #[error("send message error: {0}")]
     SendError(#[from] tokio::sync::mpsc::error::SendTimeoutError<ClientMessage>),
-    #[error("timeout error")]
-    Timeout,
-    #[error("failed to send message via UDP")]
-    UdpFailed 
+    #[error("invalid voice target id")]
+    InvalidVoiceTarget
 }
 
 impl actix_web::error::ResponseError for MumbleError {}

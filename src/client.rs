@@ -229,7 +229,7 @@ impl Client {
         self.send_message(MessageKind::ServerConfig, &server_config).await
     }
 
-    pub async fn send_voice_packet(&self, packet: VoicePacket<ClientBound>) -> Result<(), MumbleError> {
+    pub async fn send_voice_packet(&self, packet: Arc<VoicePacket<ClientBound>>) -> Result<(), MumbleError> {
         if let Some(addr) = self.udp_socket_addr.load_full() {
             let mut dest = BytesMut::new();
 
