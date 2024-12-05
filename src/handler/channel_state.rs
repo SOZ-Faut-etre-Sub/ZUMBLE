@@ -55,7 +55,7 @@ impl Handler for ChannelState {
 
         let err = state.broadcast_message(MessageKind::ChannelState, channel_state.as_ref());
 
-        state.set_client_channel(client, &channel);
+        state.set_client_channel(client, channel.id)?;
 
         err
     }

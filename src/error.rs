@@ -18,6 +18,8 @@ pub enum MumbleError {
     SendError(#[from] tokio::sync::mpsc::error::SendTimeoutError<ClientMessage>),
     #[error("invalid voice target id")]
     InvalidVoiceTarget,
+    #[error("channel doesn't exist")]
+    ChannelDoesntExist
 }
 
 impl actix_web::error::ResponseError for MumbleError {}

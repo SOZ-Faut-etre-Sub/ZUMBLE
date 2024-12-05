@@ -213,22 +213,34 @@ impl ServerState {
         Some(leave_channel_id)
     }
 
-    pub fn set_client_channel(&self, client: ClientRef, channel: &Channel) {
-        let leave_channel_id = { client.join_channel(channel.id) };
+    pub fn set_client_channel(&self, client: ClientRef, channel: u32) -> Result<(), MumbleError> {
+        let leave_channel_id = client.join_channel(channel);
 
-        channel.get_clients().upsert(client.session_id, client.clone());
+        tracing::info!(
+            "Client: {} joined channel {} and left channel {:?}",
+            client.session_id,
+            channel,
+            leave_channel_id
+        );
+
+        if let Some(channel) = self.channels.get(&channel) {
+            channel.get_clients().upsert(client.session_id, client.clone());
+        } else {
+            return Err(MumbleError::ChannelDoesntExist);
+        }
+
+        // Broadcast new user state
+        let user_state = client.get_user_state();
+        match self.broadcast_message(MessageKind::UserState, &user_state) {
+            Ok(_) => (),
+            Err(e) => tracing::error!("failed to send user state: {:?}", e),
+        }
 
         if let Some(leave_channel_id) = leave_channel_id {
-            // Broadcast new user state
-            let user_state = client.get_user_state();
-
-            match self.broadcast_message(MessageKind::UserState, &user_state) {
-                Ok(_) => (),
-                Err(e) => tracing::error!("failed to send user state: {:?}", e),
-            }
-
             self.handle_client_left_channel(client.session_id, leave_channel_id);
         }
+
+        Ok(())
     }
 
     pub fn get_channel_by_name(&self, name: &str) -> Option<ChannelRef> {
