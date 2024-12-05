@@ -115,9 +115,7 @@ impl Client {
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {
         let mut writer = self.write.lock().await;
         match writer.write_all(data).await {
-            Ok(_bytes) => {
-                Ok(())
-            }
+            Ok(_bytes) => Ok(()),
             Err(e) => Err(e.into()),
         }
     }

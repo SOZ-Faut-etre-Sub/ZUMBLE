@@ -1,7 +1,6 @@
-
 use scc::HashMap;
 
-use crate::client::{ClientRef};
+use crate::client::ClientRef;
 use crate::proto::mumble::ChannelState;
 use std::sync::Arc;
 

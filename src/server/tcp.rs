@@ -8,8 +8,8 @@ use crate::state::ServerStateRef;
 use actix_server::Server;
 use actix_service::fn_service;
 use anyhow::{anyhow, Context};
-use tokio::io::{self};
 use tokio::io::ReadHalf;
+use tokio::io::{self};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
@@ -54,7 +54,12 @@ async fn handle_new_client(
     let cur_clients = state.clients.len();
     let addr = stream.peer_addr()?;
     if cur_clients >= MAX_CLIENTS {
-        return Err(anyhow!("{:?} tried to join but the server is at maximum capacity ({}/{})", addr, cur_clients, MAX_CLIENTS));
+        return Err(anyhow!(
+            "{:?} tried to join but the server is at maximum capacity ({}/{})",
+            addr,
+            cur_clients,
+            MAX_CLIENTS
+        ));
     }
 
     stream.set_nodelay(true).context("set stream no delay")?;
