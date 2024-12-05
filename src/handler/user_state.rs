@@ -15,9 +15,7 @@ impl Handler for UserState {
         client.update(self);
 
         if self.has_channel_id() {
-            if let Some(channel) = state.channels.get(&self.get_channel_id()) {
-                state.set_client_channel(client.clone(), channel.as_ref());
-            }
+            state.set_client_channel(client.clone(), self.get_channel_id())?;
         }
 
         for channel_id in self.get_listening_channel_add() {
