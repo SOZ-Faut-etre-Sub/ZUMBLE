@@ -385,10 +385,15 @@ impl ServerState {
     pub fn disconnect(&self, client: ClientRef) {
         crate::metrics::CLIENTS_TOTAL.dec();
 
-        let client_id = client.session_id;
+        let client_session = client.session_id;
 
-        self.clients.remove(&client_id);
-        self.clients_without_udp.remove(&client_id);
+        self.clients.remove(&client_session);
+        self.clients_without_udp.remove(&client_session);
+
+        // if the client was listening to any channels we want to remove them
+        self.channels.scan(|_, channel| {
+            channel.listeners.retain(|session_id, _| *session_id != client_session);
+        });
 
         let socket = client.udp_socket_addr.swap(None);
 
@@ -398,7 +403,7 @@ impl ServerState {
 
         let channel_id = client.channel_id.load(Ordering::Relaxed);
 
-        self.broadcast_client_delete(client_id, channel_id);
+        self.broadcast_client_delete(client_session, channel_id);
     }
 
     fn broadcast_client_delete(&self, client_id: u32, channel_id: u32) {
