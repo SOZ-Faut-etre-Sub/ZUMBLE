@@ -141,12 +141,12 @@ async fn handle_packet(
                 _ => {
                     tracing::error!("unknown client from address {}", addr);
 
-                    crate::metrics::MESSAGES_TOTAL
-                        .with_label_values(&["udp", "input", "VoicePacket"])
+                    crate::metrics::UNKNOWN_MESSAGES_TOTAL
+                        .with_label_values(&["udp", "input", "UnknownPackets"])
                         .inc();
 
-                    crate::metrics::MESSAGES_BYTES
-                        .with_label_values(&["udp", "input", "VoicePacket"])
+                    crate::metrics::UNKNOWN_MESSAGES_BYTES
+                        .with_label_values(&["udp", "input", "UnknownPacket"])
                         .inc_by(size as u64);
 
                     return Ok(());
