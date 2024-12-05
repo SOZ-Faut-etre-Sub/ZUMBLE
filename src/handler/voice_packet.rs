@@ -86,7 +86,7 @@ impl Handler for VoicePacket<ClientBound> {
                             Err(err) => {
                                 tracing::error!(
                                     "error sending voice packet message to {}: {}",
-                                    client.authenticate.get_username(),
+                                    client.get_name(),
                                     err
                                 );
                             }
