@@ -52,14 +52,14 @@ async fn handle_new_client(
     stream: TcpStream,
 ) -> Result<(), anyhow::Error> {
     let cur_clients = state.clients.len();
+    let addr = stream.peer_addr()?;
     if cur_clients >= MAX_CLIENTS {
-        return Err(anyhow!("{:?} tried to join but the server is at maximum capacity ({}/{})", stream.peer_addr(), cur_clients, MAX_CLIENTS));
+        return Err(anyhow!("{:?} tried to join but the server is at maximum capacity ({}/{})", addr, cur_clients, MAX_CLIENTS));
     }
 
     stream.set_nodelay(true).context("set stream no delay")?;
 
     let mut stream = acceptor.accept(stream).await.context("accept tls")?;
-
 
     let (version, authenticate, crypt_state) = Client::init(&mut stream, server_version).await.context("init client")?;
 
@@ -69,7 +69,7 @@ async fn handle_new_client(
     let username = authenticate.get_username().to_string();
     let client = state.add_client(version, authenticate, crypt_state, write, tx);
 
-    tracing::info!("new client {} connected", username);
+    tracing::info!("TCP new client {} connected {}", username, addr);
 
     match client_run(read, rx, state.clone(), client.clone()).await {
         Ok(_) => (),
