@@ -81,14 +81,13 @@ async fn main() {
     let generate_rsa_for = KeyPair::generate_rsa_for(&PKCS_RSA_SHA512, RsaKeySize::_2048);
     let key_pair = generate_rsa_for.unwrap();
 
-    let not_after = date_time_ymd(2100, 1, 1);
+    let mut cert = CertificateParams::new(cert).expect("Unable to generate certificate");
+    // we need to change our time to be something sensible, botan will freak out if this is greater
+    // than 2200 (by default it gens to 4096)
+    cert.not_after = date_time_ymd(2100, 1, 1);
+
     let mut distinguished_name = DistinguishedName::new();
     distinguished_name.push(DnType::CommonName, "Mumble self signed cert");
-
-    let mut cert = CertificateParams::new(cert).expect("Unable to generate certificate");
-    // we need to change our time to be something sensible, botal will freak out if this is greater
-    // than 2200 (by default it gens to 4096)
-    cert.not_after = not_after;
     cert.distinguished_name = distinguished_name;
 
     let cert = cert.self_signed(&key_pair).unwrap();

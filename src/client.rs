@@ -156,15 +156,10 @@ impl Client {
         Ok(())
     }
 
-    /// Removes the UDP socket from the client and removes it from the server list of sockets
-    pub fn remove_client_udp_socket(&self, state: &ServerState) {
+    /// removes the udp socket from the client and returns it to the caller
+    pub fn remove_udp_socket(&self) -> Option<Arc<SocketAddr>> {
         // swap the udp socket address for none so we don't keep a copy
-        let address_option = self.udp_socket_addr.swap(None);
-
-        if let Some(address) = address_option {
-            // remove the socket
-            state.remove_client_by_socket(&address);
-        }
+        self.udp_socket_addr.swap(None)
     }
 
     pub async fn send_crypt_setup(&self, reset: bool) -> Result<(), MumbleError> {

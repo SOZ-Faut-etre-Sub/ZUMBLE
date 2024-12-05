@@ -120,15 +120,9 @@ async fn handle_packet(
                     if restart_crypt {
                         tracing::error!("client {} udp decrypt error: {}, reset crypt setup", username, err);
 
-                        let send_crypt_setup = client.send_crypt_setup(true).await;
-
-                        if let Err(e) = send_crypt_setup {
+                        if let Err(e) = state.reset_client_crypt(client.clone()).await {
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
-
-                        state.clients_without_udp.upsert(client.session_id, client.clone());
-
-                        client.remove_client_udp_socket(&state);
                     }
 
                     return Ok(());
@@ -140,9 +134,7 @@ async fn handle_packet(
 
             match (client_opt, packet_opt) {
                 (Some(client), Some(packet)) => {
-                    {
-                        tracing::info!("UPD connected client {} on {}", client.authenticate.get_username(), addr);
-                    }
+                    tracing::info!("UPD connected client {} on {}", client.authenticate.get_username(), addr);
 
                     (client, packet)
                 }

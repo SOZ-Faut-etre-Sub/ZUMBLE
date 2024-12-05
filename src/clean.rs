@@ -1,6 +1,7 @@
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::state::{ServerState, ServerStateRef};
+use std::sync::Arc;
 use std::time::Instant;
 
 pub async fn clean_loop(state: ServerStateRef) {
@@ -21,6 +22,7 @@ pub async fn clean_loop(state: ServerStateRef) {
 async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
     let mut client_to_disconnect = Vec::new();
     let mut clients_to_remove = Vec::new();
+    let mut clients_to_reset_crypt = Vec::new();
 
     let mut iter = state.clients_by_socket.first_entry();
     while let Some(client) = iter {
@@ -41,12 +43,17 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
         };
 
         if now.duration_since(last_good).as_millis() > 5000 {
-            if let Err(e) = client.send_crypt_setup(true).await {
-                tracing::error!("failed to send crypt setup for {}: {:?}", e, client.session_id);
-            }
+            clients_to_reset_crypt.push(client.clone())
         }
 
         iter = client.next();
+    }
+
+    for client in clients_to_reset_crypt {
+        let session_id = client.session_id;
+        if let Err(e) = state.reset_client_crypt(client).await {
+            tracing::error!("failed to send crypt setup for {}: {:?}", e, session_id);
+        }
     }
 
     for client in client_to_disconnect {
