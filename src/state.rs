@@ -110,13 +110,13 @@ impl ServerState {
             0,
             crypt_state,
             write,
-            self.socket.clone(),
+            Arc::clone(&self.socket),
             publisher,
         ));
 
         crate::metrics::CLIENTS_TOTAL.inc();
-        self.clients.upsert(session_id, client.clone());
-        self.clients_without_udp.upsert(session_id, client.clone());
+        self.clients.upsert(session_id, Arc::clone(&client));
+        self.clients_without_udp.upsert(session_id, Arc::clone(&client));
 
         client
     }
@@ -348,6 +348,25 @@ impl ServerState {
         }
 
         Ok((client, packet))
+    }
+
+    /// NOTE: This shouldn't be called in an iterator for `client_by_socket` or else it will cause
+    /// a deadlock
+    ///
+    /// Resets the clients crypt state and removes their udp socket so we no longer take invalid
+    /// data from the UDP stream
+    pub async fn reset_client_crypt(&self, client: ClientRef) -> Result<(), MumbleError> {
+        self.clients_without_udp.upsert(client.session_id, Arc::clone(&client));
+
+        // swap out the clients socket with none so we don't try to reuse the old socket
+        let address_option = client.remove_udp_socket();
+
+        if let Some(address) = address_option {
+            // remove the socket
+            self.remove_client_by_socket(&address);
+        }
+
+        client.send_crypt_setup(true).await
     }
 
     pub fn disconnect(&self, client: ClientRef) {
