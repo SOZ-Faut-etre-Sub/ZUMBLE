@@ -57,7 +57,7 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
     }
 
     for client in client_to_disconnect {
-        let username = { client.authenticate.get_username().to_string() };
+        let username = client.get_name();
 
         match client.publisher.try_send(ClientMessage::Disconnect) {
             Ok(_) => (),

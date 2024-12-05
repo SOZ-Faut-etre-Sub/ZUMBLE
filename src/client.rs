@@ -27,6 +27,7 @@ type VoiceTargetArray = [Arc<VoiceTarget>; 29];
 
 pub struct Client {
     // pub version: Version,
+    name: Arc<String>,
     pub authenticate: Authenticate,
     pub session_id: u32,
     pub channel_id: AtomicU32,
@@ -82,6 +83,7 @@ impl Client {
         Self {
             // version,
             session_id,
+            name: Arc::new(authenticate.get_username().to_string()),
             channel_id: AtomicU32::new(channel_id),
             crypt_state: Mutex::new(crypt_state),
             write: tokio::sync::Mutex::new(write),
@@ -104,6 +106,10 @@ impl Client {
     /// one to reduce the needed storage for voice targets.
     pub fn get_target(&self, id: u8) -> Option<Arc<VoiceTarget>> {
         self.targets.get((id - 1) as usize).cloned()
+    }
+
+    pub fn get_name(&self) -> &Arc<String> {
+        &self.name
     }
 
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {
@@ -135,7 +141,7 @@ impl Client {
     pub async fn send_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
         tracing::trace!(
             "[{}] [{}] send message: {:?}, {:?}",
-            self.authenticate.get_username(),
+            self.name,
             self.session_id,
             std::any::type_name::<T>(),
             message
@@ -284,7 +290,7 @@ impl Client {
         user_state.set_user_id(self.session_id);
         user_state.set_channel_id(self.channel_id.load(Ordering::Relaxed));
         user_state.set_session(self.session_id);
-        user_state.set_name(self.authenticate.get_username().to_string());
+        user_state.set_name(self.get_name().as_ref().clone());
 
         user_state
     }

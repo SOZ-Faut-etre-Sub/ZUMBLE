@@ -31,12 +31,10 @@ impl MessageHandler {
     async fn try_handle<T: Message + Handler>(buf: &[u8], state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         let message = T::parse_from_bytes(buf)?;
 
-        let (username, client_id) = { (client.authenticate.get_username().to_string(), client.session_id) };
-
         tracing::trace!(
             "[{}] [{}] handle message: {:?}, {:?}",
-            username,
-            client_id,
+            client.get_name(),
+            client.session_id,
             std::any::type_name::<T>(),
             message
         );

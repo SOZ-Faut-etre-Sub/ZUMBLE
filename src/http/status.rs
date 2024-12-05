@@ -49,7 +49,7 @@ pub async fn get_status(state: web::Data<ServerStateRef>) -> Result<HttpResponse
             };
 
             let mut mumble_client = MumbleClient {
-                name: client.authenticate.get_username().to_string(),
+                name: client.get_name().as_ref().clone(),
                 session_id: client.session_id,
                 channel: channel_name,
                 mute: client.is_muted(),

@@ -96,7 +96,7 @@ async fn handle_packet(
             match decrypt_result {
                 Ok(p) => (client, p),
                 Err(err) => {
-                    let username = { client.authenticate.get_username().to_string() };
+                    let username = client.get_name();
                     tracing::warn!("client {} decrypt error: {}", username, err);
 
                     crate::metrics::MESSAGES_TOTAL
@@ -134,7 +134,7 @@ async fn handle_packet(
 
             match (client_opt, packet_opt) {
                 (Some(client), Some(packet)) => {
-                    tracing::info!("UPD connected client {} on {}", client.authenticate.get_username(), addr);
+                    tracing::info!("UPD connected client {} on {}", client.get_name(), addr);
 
                     (client, packet)
                 }

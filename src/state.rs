@@ -176,7 +176,7 @@ impl ServerState {
             }) {
                 Ok(_) => {}
                 Err(err) => {
-                    tracing::error!("failed to send message to {}: {}", client.authenticate.get_username(), err);
+                    tracing::error!("failed to send message to {}: {}", client.get_name(), err);
                 }
             };
         });
