@@ -1,4 +1,4 @@
-use crate::client::{ClientRef};
+use crate::client::ClientRef;
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::Authenticate;

@@ -68,7 +68,7 @@ pub struct ServerState {
     pub codec_state: Arc<RwLock<CodecState>>,
     pub socket: Arc<UdpSocket>,
     session_count: AtomicU32,
-    channel_count: AtomicU32
+    channel_count: AtomicU32,
 }
 
 impl ServerState {
@@ -300,16 +300,17 @@ impl ServerState {
     pub async fn find_client_with_decrypt(
         &self,
         bytes: &mut BytesMut,
-        addr: SocketAddr
+        addr: SocketAddr,
     ) -> Result<(Option<ClientRef>, Option<VoicePacket<ServerBound>>), MumbleError> {
-
         let mut client = None;
         let mut packet: Option<VoicePacket<ServerBound>> = None;
 
         self.clients_without_udp.scan(|_, c| {
             // we don't have a way to early return out of a scan so if we *have* a client we should
             // just continue and not try to decrypt
-            if client.is_some() { return; }
+            if client.is_some() {
+                return;
+            }
 
             let mut try_buf = bytes.clone();
             let (decrypt_result, last_good) = {
@@ -396,7 +397,6 @@ impl ServerState {
         let _ = self.broadcast_message(MessageKind::UserRemove, &remove);
 
         self.handle_client_left_channel(client_id, channel_id);
-
     }
 
     // TODO: this can still wrap and overwrite existing sessions, though its very unlikely

@@ -38,9 +38,7 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
             client_to_disconnect.push(client.clone());
         }
 
-        let last_good = {
-            client.crypt_state.lock().last_good
-        };
+        let last_good = { client.crypt_state.lock().last_good };
 
         if now.duration_since(last_good).as_millis() > 5000 {
             clients_to_reset_crypt.push(client.clone())

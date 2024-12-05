@@ -17,7 +17,7 @@ pub enum MumbleError {
     #[error("send message error: {0}")]
     SendError(#[from] tokio::sync::mpsc::error::SendTimeoutError<ClientMessage>),
     #[error("invalid voice target id")]
-    InvalidVoiceTarget
+    InvalidVoiceTarget,
 }
 
 impl actix_web::error::ResponseError for MumbleError {}
