@@ -237,6 +237,8 @@ impl ServerState {
         }
 
         if let Some(leave_channel_id) = leave_channel_id {
+            // if the channel we're joining is the same channel we dont want to do leave logic
+            if leave_channel_id == channel { return Ok(()) };
             self.handle_client_left_channel(client.session_id, leave_channel_id);
         }
 
