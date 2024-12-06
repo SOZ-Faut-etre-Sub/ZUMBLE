@@ -80,7 +80,7 @@ impl Handler for VoicePacket<ClientBound> {
                 }
 
                 if client.session_id != *session_id {
-                    match client.publisher.try_send(ClientMessage::SendVoicePacket(packet.clone())) {
+                    match client.publisher.send(ClientMessage::SendVoicePacket(packet.clone())) {
                         Ok(_) => {}
                         Err(err) => {
                             tracing::error!("error sending voice packet message to {}: {}", client.get_name(), err);
