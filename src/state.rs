@@ -13,7 +13,6 @@ use scc::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
 use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
