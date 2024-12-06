@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{Sender, UnboundedSender};
 use tokio_rustls::server::TlsStream;
 
 pub type ClientRef = Arc<Client>;
@@ -40,7 +40,7 @@ pub struct Client {
     // pub use_opus: bool,
     pub codecs: Vec<i32>,
     pub udp_socket: Arc<UdpSocket>,
-    pub publisher: Sender<ClientMessage>,
+    pub publisher: UnboundedSender<ClientMessage>,
     pub targets: VoiceTargetArray,
     pub last_ping: AtomicCell<Instant>,
 }
@@ -75,7 +75,7 @@ impl Client {
         crypt_state: CryptState,
         write: WriteHalf<TlsStream<TcpStream>>,
         udp_socket: Arc<UdpSocket>,
-        publisher: Sender<ClientMessage>,
+        publisher: UnboundedSender<ClientMessage>,
     ) -> Self {
         // let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
         let targets: VoiceTargetArray = core::array::from_fn(|_v| Arc::new(VoiceTarget::default()));

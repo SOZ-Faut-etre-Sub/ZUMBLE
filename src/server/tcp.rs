@@ -11,7 +11,7 @@ use anyhow::{anyhow, Context};
 use tokio::io::ReadHalf;
 use tokio::io::{self};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio::sync::mpsc::Receiver;
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
 
@@ -69,7 +69,7 @@ async fn handle_new_client(
     let (version, authenticate, crypt_state) = Client::init(&mut stream, server_version).await.context("init client")?;
 
     let (read, write) = io::split(stream);
-    let (tx, rx) = mpsc::channel(MAX_MTU * 10);
+    let (tx, rx) = mpsc::unbounded_channel();
 
     let username = authenticate.get_username().to_string();
     let client = state.add_client(version, authenticate, crypt_state, write, tx);
@@ -90,7 +90,7 @@ async fn handle_new_client(
 
 pub async fn client_run(
     mut read: ReadHalf<TlsStream<TcpStream>>,
-    mut receiver: Receiver<ClientMessage>,
+    mut receiver: UnboundedReceiver<ClientMessage>,
     state: ServerStateRef,
     client: ClientRef,
 ) -> Result<(), anyhow::Error> {
