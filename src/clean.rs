@@ -66,7 +66,7 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
     }
 
     for session_id in clients_to_remove {
-        state.remove_client_by_session_id(session_id);
+        state.disconnect(session_id);
     }
 
     Ok(())
