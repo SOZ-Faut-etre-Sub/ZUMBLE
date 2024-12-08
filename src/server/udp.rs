@@ -7,7 +7,8 @@ use anyhow::anyhow;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
-use std::io::Cursor;
+use tokio::time::Instant;
+use std::{io::Cursor, time::Duration};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
@@ -96,8 +97,7 @@ async fn handle_packet(
             match decrypt_result {
                 Ok(p) => (client, p),
                 Err(err) => {
-                    let username = client.get_name();
-                    tracing::warn!("client {} decrypt error: {}", username, err);
+                    tracing::warn!("client {} decrypt error: {}", client, err);
 
                     crate::metrics::MESSAGES_TOTAL
                         .with_label_values(&["udp", "input", "VoicePacket"])
@@ -118,7 +118,7 @@ async fn handle_packet(
                     };
 
                     if restart_crypt {
-                        tracing::error!("client {} udp decrypt error: {}, reset crypt setup", username, err);
+                        tracing::error!("client {} udp decrypt error: {}, reset crypt setup", client, err);
 
                         if let Err(e) = state.reset_client_crypt(client.clone()).await {
                             tracing::error!("failed to send crypt setup: {:?}", e);
@@ -134,12 +134,15 @@ async fn handle_packet(
 
             match (client_opt, packet_opt) {
                 (Some(client), Some(packet)) => {
-                    tracing::info!("UPD connected client {} on {}", client.get_name(), addr);
+                    tracing::info!("UPD connected client {} on {}", client, addr);
 
                     (client, packet)
                 }
                 _ => {
-                    tracing::error!("unknown client from address {}", addr);
+                    // don't log if we've done it recently
+                    // if let Ok(Some((_, _))) = state.logs.put(addr, ()) {
+                        tracing::error!("unknown client from address {}", addr);
+                    // }
 
                     crate::metrics::UNKNOWN_MESSAGES_TOTAL
                         .with_label_values(&["udp", "input", "UnknownPackets"])

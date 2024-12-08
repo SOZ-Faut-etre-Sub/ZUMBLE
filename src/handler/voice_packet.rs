@@ -83,7 +83,7 @@ impl Handler for VoicePacket<ClientBound> {
                     match client.publisher.send(ClientMessage::SendVoicePacket(packet.clone())) {
                         Ok(_) => {}
                         Err(err) => {
-                            tracing::error!("error sending voice packet message to {}: {}", client.get_name(), err);
+                            tracing::error!("error sending voice packet message to {}: {}", client, err);
                         }
                     }
                 }

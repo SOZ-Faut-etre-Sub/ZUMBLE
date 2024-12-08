@@ -12,6 +12,7 @@ use bytes::BytesMut;
 use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 use protobuf::Message;
+use std::fmt::{Debug, Display};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
@@ -28,6 +29,7 @@ type VoiceTargetArray = [Arc<VoiceTarget>; 29];
 pub struct Client {
     // pub version: Version,
     name: Arc<String>,
+    log_name: Arc<String>,
     pub authenticate: Authenticate,
     pub session_id: u32,
     pub channel_id: AtomicU32,
@@ -43,6 +45,12 @@ pub struct Client {
     pub publisher: UnboundedSender<ClientMessage>,
     pub targets: VoiceTargetArray,
     pub last_ping: AtomicCell<Instant>,
+}
+
+impl Display for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.log_name)
+    }
 }
 
 impl Client {
@@ -83,6 +91,8 @@ impl Client {
         Self {
             // version,
             session_id,
+            log_name: Arc::new(format!("{} [session id: {}]", authenticate.get_username(), session_id)),
+
             name: Arc::new(authenticate.get_username().to_string()),
             channel_id: AtomicU32::new(channel_id),
             crypt_state: Mutex::new(crypt_state),
@@ -166,6 +176,8 @@ impl Client {
         self.udp_socket_addr.swap(None)
     }
 
+    // TODO: If https://github.com/citizenfx/fivem/pull/2990 gets merged this should only send back
+    // the server nonce for unless the clients request a resync
     pub async fn send_crypt_setup(&self, reset: bool) -> Result<(), MumbleError> {
         let crypt_setup = {
             let mut crypt = self.crypt_state.lock();

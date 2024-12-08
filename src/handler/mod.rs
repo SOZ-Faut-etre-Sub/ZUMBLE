@@ -8,6 +8,8 @@ mod version;
 mod voice_packet;
 mod voice_target;
 
+use anyhow::anyhow;
+
 use crate::client::ClientRef;
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
@@ -19,7 +21,6 @@ use anyhow::Context;
 use bytes::BytesMut;
 use protobuf::Message;
 use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub trait Handler {
@@ -33,9 +34,8 @@ impl MessageHandler {
         let message = T::parse_from_bytes(buf)?;
 
         tracing::trace!(
-            "[{}] [{}] handle message: {:?}, {:?}",
-            client.get_name(),
-            client.session_id,
+            "[{}] handle message: {:?}, {:?}",
+            client,
             std::any::type_name::<T>(),
             message
         );
@@ -54,7 +54,10 @@ impl MessageHandler {
             kind_read = stream.read_u16() => {
                 let kind = kind_read?;
                 let size = stream.read_u32().await?;
-                let mut buf = vec![0; size as usize];
+                if size > 1024 {
+                    return Err(anyhow!("Packet was size was {size}, max allowed is 1024"));
+                }
+                let mut buf = BytesMut::zeroed(size as usize);
                 stream.read_exact(&mut buf).await?;
 
                 let message_kind = MessageKind::try_from(kind)?;
@@ -65,9 +68,7 @@ impl MessageHandler {
                 match message_kind {
                     MessageKind::Version => Self::try_handle::<mumble::Version>(&buf, state, client).await.context("kind: Version"),
                     MessageKind::UDPTunnel => {
-                        let mut bytes = BytesMut::from(buf.as_slice());
-
-                        let voice_packet = match decode_voice_packet::<ServerBound>(&mut bytes) {
+                        let voice_packet = match decode_voice_packet::<ServerBound>(&mut buf) {
                             Ok(voice_packet) => voice_packet,
                             Err(e) => {
                                 tracing::error!("error decoding voice packet: {}", e);
