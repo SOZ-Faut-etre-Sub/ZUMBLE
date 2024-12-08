@@ -9,7 +9,7 @@ use crate::server::constants::MAX_CLIENTS;
 use crate::voice::{ServerBound, VoicePacket};
 use bytes::BytesMut;
 use protobuf::Message;
-use scc::HashMap;
+use scc::{HashCache, HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -17,6 +17,7 @@ use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::{Sender, UnboundedSender};
 use tokio::sync::RwLock;
+use tokio::time::Instant;
 use tokio_rustls::server::TlsStream;
 
 pub struct CodecState {
@@ -66,6 +67,7 @@ pub struct ServerState {
     pub channels: HashMap<u32, Arc<Channel>>,
     pub codec_state: Arc<RwLock<CodecState>>,
     pub socket: Arc<UdpSocket>,
+    pub logs: HashCache<SocketAddr, ()>,
     session_count: AtomicU32,
     channel_count: AtomicU32,
 }
@@ -82,6 +84,7 @@ impl ServerState {
             // we preallocate the maximum amount of clients to prevent the possibility of resizes
             // later, which will prevent double-sends in certain situations
             clients: HashMap::with_capacity(MAX_CLIENTS),
+            logs: HashCache::with_capacity(500, 1000),
             clients_without_udp: HashMap::with_capacity(MAX_CLIENTS),
             clients_by_socket: HashMap::with_capacity(MAX_CLIENTS),
             channels,
@@ -168,7 +171,7 @@ impl ServerState {
             }) {
                 Ok(_) => {}
                 Err(err) => {
-                    tracing::error!("failed to send message to {}: {}", client.get_name(), err);
+                    tracing::error!("failed to send message to {}: {}", client, err);
                 }
             };
         });
@@ -230,7 +233,9 @@ impl ServerState {
 
         if let Some(leave_channel_id) = leave_channel_id {
             // if the channel we're joining is the same channel we dont want to do leave logic
-            if leave_channel_id == channel { return Ok(()) };
+            if leave_channel_id == channel {
+                return Ok(());
+            };
             self.handle_client_left_channel(client.session_id, leave_channel_id);
         }
 
@@ -319,9 +324,9 @@ impl ServerState {
             }
 
             let mut try_buf = bytes.clone();
-            let (decrypt_result, last_good) = {
+            let decrypt_result = {
                 let mut crypt_state = c.crypt_state.lock();
-                (crypt_state.decrypt(&mut try_buf), crypt_state.last_good)
+                crypt_state.decrypt(&mut try_buf)
             };
 
             match decrypt_result {
@@ -331,20 +336,6 @@ impl ServerState {
                     packet = Some(p);
                 }
                 Err(err) => {
-                    // NOTE: Moved to to clean.rs, left for here for now
-                    // let duration = { Instant::now().duration_since(last_good).as_millis() };
-                    //
-                    // // last good packet was more than 5sec ago, reset
-                    // if duration > 5000 {
-                    //     let send_crypt_setup = client.send_crypt_setup(true);
-                    //
-                    //     if let Err(e) = send_crypt_setup.await {
-                    //         tracing::error!("failed to send crypt setup: {:?}", e);
-                    //     }
-                    //
-                    //     client.remove_client_udp_socket(self);
-                    // }
-                    //
                     tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
                 }
             }
@@ -386,7 +377,6 @@ impl ServerState {
         self.channels.scan(|_, channel| {
             channel.listeners.retain(|session_id, _| *session_id != client_session);
         });
-
 
         if let Some((_, client)) = client {
             let socket = client.udp_socket_addr.swap(None);

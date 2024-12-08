@@ -3,7 +3,7 @@ use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
 use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
-use crate::server::constants::{MAX_CLIENTS, MAX_MTU};
+use crate::server::constants::MAX_CLIENTS;
 use crate::state::ServerStateRef;
 use actix_server::Server;
 use actix_service::fn_service;
@@ -12,7 +12,6 @@ use tokio::io::ReadHalf;
 use tokio::io::{self};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
-use tokio::sync::mpsc::Receiver;
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
 
 pub fn create_tcp_server(tcp_listener: TcpListener, acceptor: TlsAcceptor, server_version: Version, state: ServerStateRef) -> Server {

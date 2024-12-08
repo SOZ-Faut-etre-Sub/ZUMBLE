@@ -19,7 +19,8 @@ impl Handler for VoiceTarget {
         let target = match target_opt {
             Some(target) => target,
             None => {
-                return Err(MumbleError::InvalidVoiceTarget);
+                tracing::error!("{} tried to target voice target {} but the channel didn't exist", client, self.get_id());
+                return Ok(());
             }
         };
 
@@ -28,11 +29,13 @@ impl Handler for VoiceTarget {
 
         for target_item in self.get_targets() {
             for session in target_item.get_session() {
+                tracing::debug!("{} is targeting session: {session}", client);
                 // we clear this above, we won't run into duplicate inserts.
                 let _ = target.sessions.insert(*session);
             }
 
             if target_item.has_channel_id() {
+                tracing::debug!("{} is targeting channel: {}", client, target_item.get_channel_id());
                 // we clear this above, we won't run into duplicate inserts.
                 let _ = target.channels.insert(target_item.get_channel_id());
             }

@@ -40,7 +40,7 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
 
         let last_good = { client.crypt_state.lock().last_good };
 
-        if now.duration_since(last_good).as_millis() > 5000 {
+        if now.duration_since(last_good).as_millis() > 8000 {
             clients_to_reset_crypt.push(client.clone())
         }
 
@@ -48,19 +48,21 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
     }
 
     for client in clients_to_reset_crypt {
+        let log_name = Arc::clone(&client);
         let session_id = client.session_id;
         if let Err(e) = state.reset_client_crypt(client).await {
             tracing::error!("failed to send crypt setup for {}: {:?}", e, session_id);
+        } else {
+            tracing::info!("Requesting {} crypt be reset", log_name);
         }
     }
 
     for client in client_to_disconnect {
-        let username = client.get_name();
 
         match client.publisher.send(ClientMessage::Disconnect) {
             Ok(_) => (),
             Err(err) => {
-                tracing::error!("error sending disconnect signal to {}: {}", username, err);
+                tracing::error!("error sending disconnect signal to {}: {}", client, err);
             }
         }
     }
