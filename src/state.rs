@@ -10,7 +10,7 @@ use crate::voice::{ServerBound, VoicePacket};
 use bytes::BytesMut;
 use protobuf::Message;
 use scc::{HashCache, HashMap, HashSet};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tokio::io::WriteHalf;
@@ -64,6 +64,7 @@ pub struct ServerState {
     pub clients: HashMap<u32, ClientRef>,
     pub clients_without_udp: HashMap<u32, ClientRef>,
     pub clients_by_socket: HashMap<SocketAddr, ClientRef>,
+    pub clients_by_peer: HashMap<IpAddr, AtomicU32>,
     pub channels: HashMap<u32, Arc<Channel>>,
     pub codec_state: Arc<RwLock<CodecState>>,
     pub socket: Arc<UdpSocket>,
@@ -87,6 +88,7 @@ impl ServerState {
             logs: HashCache::with_capacity(500, 1000),
             clients_without_udp: HashMap::with_capacity(MAX_CLIENTS),
             clients_by_socket: HashMap::with_capacity(MAX_CLIENTS),
+            clients_by_peer: HashMap::with_capacity(MAX_CLIENTS),
             channels,
             codec_state: Arc::new(RwLock::new(CodecState::default())),
             socket,
@@ -102,6 +104,7 @@ impl ServerState {
         crypt_state: CryptState,
         write: WriteHalf<TlsStream<TcpStream>>,
         publisher: Sender<ClientMessage>,
+        peer_ip: IpAddr,
     ) -> ClientRef {
         let session_id = self.get_free_session_id();
 
@@ -118,6 +121,12 @@ impl ServerState {
 
         crate::metrics::CLIENTS_TOTAL.inc();
         self.clients.upsert(session_id, Arc::clone(&client));
+        if let Some(ref_count) = self.clients_by_peer.get(&peer_ip) {
+            ref_count.fetch_add(1, Ordering::SeqCst);
+        } else {
+            self.clients_by_peer.upsert(peer_ip, AtomicU32::new(1));
+        }
+
         self.clients_without_udp.upsert(session_id, Arc::clone(&client));
 
         client
@@ -380,9 +389,19 @@ impl ServerState {
 
         if let Some((_, client)) = client {
             let socket = client.udp_socket_addr.swap(None);
+            let mut should_remove = false;
 
             if let Some(socket_addr) = socket {
                 self.remove_client_by_socket(&socket_addr);
+                if let Some(ref_count) = self.clients_by_peer.get(&socket_addr.ip()) {
+                    let count = ref_count.fetch_sub(1, Ordering::SeqCst);
+                    // if our last count was 0 that means our new count will be 0, we should remove them from the map
+                    should_remove = count == 1;
+                }
+
+                if should_remove {
+                    self.clients_by_peer.remove(&socket_addr.ip());
+                }
             }
 
             let channel_id = client.channel_id.load(Ordering::Relaxed);

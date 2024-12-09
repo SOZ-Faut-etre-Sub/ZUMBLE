@@ -53,6 +53,9 @@ async fn handle_new_client(
 ) -> Result<(), anyhow::Error> {
     let cur_clients = state.clients.len();
     let addr = stream.peer_addr()?;
+
+    let peer_ip = addr.ip();
+
     if cur_clients >= MAX_CLIENTS {
         return Err(anyhow!(
             "{:?} tried to join but the server is at maximum capacity ({}/{})",
@@ -72,7 +75,7 @@ async fn handle_new_client(
     let (tx, rx) = mpsc::channel(1024);
 
     let username = authenticate.get_username().to_string();
-    let client = state.add_client(version, authenticate, crypt_state, write, tx);
+    let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip);
 
     tracing::info!("TCP new client {} connected {}", username, addr);
 
