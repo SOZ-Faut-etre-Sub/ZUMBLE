@@ -25,7 +25,7 @@ use crate::server::{create_tcp_server, create_udp_server};
 use crate::state::ServerState;
 
 use clap::Parser;
-use rcgen::{date_time_ymd, CertificateParams, DistinguishedName, DnType, KeyPair, RsaKeySize, PKCS_RSA_SHA512};
+use rcgen::{date_time_ymd, CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P384_SHA384};
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::PrivateKeyDer;
 use std::sync::Arc;
@@ -78,8 +78,8 @@ async fn main() {
     let cert = vec!["localhost".to_string()];
 
     // TODO: Maybe store this? not really entirely that useful but who knows.
-    let generate_rsa_for = KeyPair::generate_rsa_for(&PKCS_RSA_SHA512, RsaKeySize::_2048);
-    let key_pair = generate_rsa_for.unwrap();
+    let generate_key = KeyPair::generate_for(&PKCS_ECDSA_P384_SHA384);
+    let key_pair = generate_key.unwrap();
 
     let mut cert = CertificateParams::new(cert).expect("Unable to generate certificate");
     // we need to change our time to be something sensible, botan will freak out if this is greater

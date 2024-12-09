@@ -23,7 +23,7 @@ futures-util = "0.3.31"
 lazy_static = "1.5.0"
 protobuf = "2.28.0"
 ring = "0.17.8"
-rustls = { version = "0.23.19", features = ["tls12", "aws_lc_rs"] }
+rustls = { version = "0.23.19", features = ["tls12"] }
 rustls-pemfile = "2.2.0"
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
@@ -35,7 +35,7 @@ tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 prometheus = { version  = "0.13.4", features = ["process"] }
 rustls-pki-types = "1.10.0"
-rcgen = { version = "0.13.1", features = ["aws_lc_rs"] }
+rcgen = { version = "0.13.1" }
 scc = "2.2.5"
 parking_lot = "0.12.3"
 arc-swap = "1.7.1"
