@@ -373,7 +373,6 @@ checksum = "f47bb8cc16b669d267eeccf585aea077d0882f4777b1c1f740217885d6e6e5a3"
 dependencies = [
  "aws-lc-sys",
  "paste",
- "untrusted 0.7.1",
  "zeroize",
 ]
 
@@ -1567,7 +1566,6 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "54077e1872c46788540de1ea3d7f4ccb1983d12f9aa909b234468676c1a36779"
 dependencies = [
- "aws-lc-rs",
  "pem",
  "ring 0.17.8",
  "rustls-pki-types",
