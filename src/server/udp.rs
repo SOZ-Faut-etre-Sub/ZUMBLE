@@ -7,11 +7,11 @@ use anyhow::anyhow;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
-use tokio::time::Instant;
-use std::{io::Cursor, time::Duration};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::{io::Cursor, time::Duration};
 use tokio::net::UdpSocket;
+use tokio::time::Instant;
 
 use super::constants::{MAX_BANDWIDTH, MAX_CLIENTS};
 
@@ -83,7 +83,15 @@ async fn handle_packet(
         return Ok(());
     }
 
-    let client_opt = { state.get_client_by_socket(&addr) };
+    if !state.clients_by_peer.contains(&addr.ip()) {
+        tracing::warn!(
+            "UPP: User tried to connect with addr: {} but they didn't connect via TCP before.",
+            addr
+        );
+        return Err(anyhow!("Not a valid peer"));
+    }
+
+    let client_opt = state.get_client_by_socket(&addr);
 
     let (client, packet) = match client_opt {
         Some(client) => {
@@ -141,7 +149,7 @@ async fn handle_packet(
                 _ => {
                     // don't log if we've done it recently
                     // if let Ok(Some((_, _))) = state.logs.put(addr, ()) {
-                        tracing::error!("unknown client from address {}", addr);
+                    tracing::error!("unknown client from address {}", addr);
                     // }
 
                     crate::metrics::UNKNOWN_MESSAGES_TOTAL
