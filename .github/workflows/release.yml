@@ -19,5 +19,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          RUSTTARGET: ${{ matrix.target }}
           TOOLCHAIN_VERSION: stable
           EXTRA_FILES: "README.md LICENSE"
