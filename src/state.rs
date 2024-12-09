@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
-use tokio::sync::mpsc::{Sender, UnboundedSender};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 use tokio_rustls::server::TlsStream;
@@ -101,7 +101,7 @@ impl ServerState {
         authenticate: Authenticate,
         crypt_state: CryptState,
         write: WriteHalf<TlsStream<TcpStream>>,
-        publisher: UnboundedSender<ClientMessage>,
+        publisher: Sender<ClientMessage>,
     ) -> ClientRef {
         let session_id = self.get_free_session_id();
 
@@ -165,7 +165,7 @@ impl ServerState {
         let bytes = message_to_bytes(kind, message)?;
 
         self.clients.scan(|_k, client| {
-            match client.publisher.send(ClientMessage::SendMessage {
+            match client.publisher.try_send(ClientMessage::SendMessage {
                 kind,
                 payload: bytes.clone(),
             }) {

@@ -21,7 +21,7 @@ use anyhow::Context;
 use bytes::BytesMut;
 use protobuf::Message;
 use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 
 pub trait Handler {
     async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError>;
@@ -46,7 +46,7 @@ impl MessageHandler {
 
     pub async fn handle<S: AsyncRead + Unpin>(
         stream: &mut S,
-        consumer: &mut UnboundedReceiver<ClientMessage>,
+        consumer: &mut Receiver<ClientMessage>,
         state: ServerStateRef,
         client: ClientRef,
     ) -> Result<(), anyhow::Error> {

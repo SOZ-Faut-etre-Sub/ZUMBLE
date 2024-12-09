@@ -204,7 +204,7 @@ async fn handle_packet(
                 .with_label_values(&["udp", "input", "VoicePacket"])
                 .inc_by(size as u64);
 
-            let send_client_packet = { client.publisher.send(ClientMessage::RouteVoicePacket(client_packet)) };
+            let send_client_packet = { client.publisher.try_send(ClientMessage::RouteVoicePacket(client_packet)) };
 
             match send_client_packet {
                 Ok(_) => (),
