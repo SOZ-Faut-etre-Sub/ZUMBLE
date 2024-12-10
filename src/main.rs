@@ -26,6 +26,7 @@ use crate::state::ServerState;
 
 use clap::Parser;
 use rcgen::{date_time_ymd, CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P384_SHA384};
+use rustls::crypto::{self, CryptoProvider};
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::PrivateKeyDer;
 use std::sync::Arc;
@@ -76,6 +77,8 @@ async fn main() {
 
     // This doesn't really matter for us as this isn't checked for FiveM
     let cert = vec!["localhost".to_string()];
+
+    CryptoProvider::install_default(crypto::ring::default_provider()).expect("failed to install ring crypto provider");
 
     // TODO: Maybe store this? not really entirely that useful but who knows.
     let generate_key = KeyPair::generate_for(&PKCS_ECDSA_P384_SHA384);

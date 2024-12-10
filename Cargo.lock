@@ -1702,6 +1702,7 @@ dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
+ "ring 0.17.8",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
