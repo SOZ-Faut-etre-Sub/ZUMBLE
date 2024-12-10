@@ -49,13 +49,18 @@ impl MessageHandler {
             kind_read = stream.read_u16() => {
                 let kind = kind_read?;
                 let size = stream.read_u32().await?;
-                if size > 1024 {
-                    return Err(anyhow!("Packet was size was {size}, max allowed is 1024"));
-                }
+                // We'll just log this for now
+                // if size > 1024 {
+                //     return Err(anyhow!("Packet was size was {size}, max allowed is 1024"));
+                // }
                 let mut buf = BytesMut::zeroed(size as usize);
                 stream.read_exact(&mut buf).await?;
 
                 let message_kind = MessageKind::try_from(kind)?;
+
+                if size > 1024 {
+                    tracing::warn!("{} is reading a packet that is very large, got size {}, max expected 1024! MessageKind: {message_kind}", client, size);
+                }
 
                 crate::metrics::MESSAGES_TOTAL.with_label_values(&["tcp", "input", message_kind.to_string().as_str()]).inc();
                 crate::metrics::MESSAGES_BYTES.with_label_values(&["tcp", "input", message_kind.to_string().as_str()]).inc_by(buf.len() as u64);
