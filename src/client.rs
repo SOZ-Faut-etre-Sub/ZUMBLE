@@ -29,7 +29,7 @@ type VoiceTargetArray = [Arc<VoiceTarget>; 29];
 pub struct Client {
     // pub version: Version,
     name: Arc<String>,
-    log_name: Arc<String>,
+    pub log_name: Arc<String>,
     pub authenticate: Authenticate,
     pub session_id: u32,
     pub channel_id: AtomicU32,
