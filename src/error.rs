@@ -12,7 +12,7 @@ pub enum MumbleError {
     Parse(#[from] protobuf::ProtobufError),
     #[error("voice decrypt error: {0}")]
     Decrypt(#[from] DecryptError),
-    #[error("force disconnecting client")]
+    #[error("Client Forcefully disconnected from server")]
     ForceDisconnect,
     #[error("send message error: {0}")]
     SendError(#[from] tokio::sync::mpsc::error::SendTimeoutError<ClientMessage>),
@@ -20,6 +20,8 @@ pub enum MumbleError {
     InvalidVoiceTarget,
     #[error("channel doesn't exist")]
     ChannelDoesntExist,
+    #[error("voice packet took to long to send, discarding")]
+    PacketDiscarded
 }
 
 impl actix_web::error::ResponseError for MumbleError {}
@@ -30,9 +32,9 @@ pub enum DecryptError {
     Io(#[from] tokio::io::Error),
     #[error("unexpected eof")]
     Eof,
-    #[error("repeat error")]
+    #[error("Client sent a repeat packet, discarding")]
     Repeat,
-    #[error("late error")]
+    #[error("Client sent a packet that was received late, discarding")]
     Late,
     #[error("mac error")]
     Mac,
