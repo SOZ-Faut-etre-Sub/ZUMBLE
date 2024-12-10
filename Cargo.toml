@@ -7,7 +7,7 @@ edition = "2021"
 actix-rt = "2.10.0"
 actix-server = "2.5.0"
 actix-service = "2.0.2"
-actix-tls = { version= "3.4.0", features = ["rustls"] }
+actix-tls = { version= "3.4.0", features = ["rustls-0_23"] }
 actix-web = { version = "4.9.0", features = ["rustls-0_23"] }
 actix-web-codegen = "4.3.0"
 actix-web-httpauth = "0.8.2"
