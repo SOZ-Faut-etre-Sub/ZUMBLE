@@ -33,8 +33,6 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
 
         let duration = now.duration_since(client.last_ping.load());
 
-        tracing::info!("{}'s last ping was {}", client.log_name, duration.as_secs());
-
         if duration.as_secs() > 30 {
             clients_to_remove.push(client.session_id);
         }
