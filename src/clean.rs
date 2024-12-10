@@ -20,11 +20,10 @@ pub async fn clean_loop(state: ServerStateRef) {
 }
 
 async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
-    let mut client_to_disconnect = Vec::new();
     let mut clients_to_remove = Vec::new();
     let mut clients_to_reset_crypt = Vec::new();
 
-    let mut iter = state.clients_by_socket.first_entry();
+    let mut iter = state.clients.first_entry();
     while let Some(client) = iter {
         if client.publisher.is_closed() {
             clients_to_remove.push(client.session_id);
@@ -34,8 +33,10 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
 
         let duration = now.duration_since(client.last_ping.load());
 
+        tracing::info!("{}'s last ping was {}", client.log_name, duration.as_secs());
+
         if duration.as_secs() > 30 {
-            client_to_disconnect.push(client.clone());
+            clients_to_remove.push(client.session_id);
         }
 
         let last_good = { client.crypt_state.lock().last_good };
@@ -54,15 +55,6 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
             tracing::error!("failed to send crypt setup for {}: {:?}", e, session_id);
         } else {
             tracing::info!("Requesting {} crypt be reset", log_name);
-        }
-    }
-
-    for client in client_to_disconnect {
-        match client.publisher.try_send(ClientMessage::Disconnect) {
-            Ok(_) => (),
-            Err(err) => {
-                tracing::error!("error sending disconnect signal to {}: {}", client, err);
-            }
         }
     }
 

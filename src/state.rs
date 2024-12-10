@@ -387,8 +387,14 @@ impl ServerState {
         });
 
         if let Some((_, client)) = client {
+            tracing::info!("Removing client {}", client);
+
+            // This is a hack to get the publisher out of its loop, if its already out of its loop
+            // then we don't care and we can just ignore it
+            let _ = client.publisher.try_send(ClientMessage::Disconnect); 
+
             let socket = client.udp_socket_addr.swap(None);
-            let mut should_remove = false;
+            // let mut should_remove = false;
 
             if let Some(socket_addr) = socket {
                 self.remove_client_by_socket(&socket_addr);
