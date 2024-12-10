@@ -19,7 +19,11 @@ impl Handler for VoiceTarget {
         let target = match target_opt {
             Some(target) => target,
             None => {
-                tracing::error!("{} tried to target voice target {} but the channel didn't exist", client, self.get_id());
+                tracing::error!(
+                    "{} tried to target voice target {} but the channel didn't exist",
+                    client,
+                    self.get_id()
+                );
                 return Ok(());
             }
         };

@@ -33,12 +33,7 @@ impl MessageHandler {
     async fn try_handle<T: Message + Handler>(buf: &[u8], state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
         let message = T::parse_from_bytes(buf)?;
 
-        tracing::trace!(
-            "[{}] handle message: {:?}, {:?}",
-            client,
-            std::any::type_name::<T>(),
-            message
-        );
+        tracing::trace!("[{}] handle message: {:?}, {:?}", client, std::any::type_name::<T>(), message);
 
         message.handle(state, client).await?;
         Ok(())

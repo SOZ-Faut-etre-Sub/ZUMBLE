@@ -9,9 +9,8 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::{io::Cursor, time::Duration};
+use std::io::Cursor;
 use tokio::net::UdpSocket;
-use tokio::time::Instant;
 
 use super::constants::{MAX_BANDWIDTH, MAX_CLIENTS};
 

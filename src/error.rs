@@ -19,7 +19,7 @@ pub enum MumbleError {
     #[error("invalid voice target id")]
     InvalidVoiceTarget,
     #[error("channel doesn't exist")]
-    ChannelDoesntExist
+    ChannelDoesntExist,
 }
 
 impl actix_web::error::ResponseError for MumbleError {}

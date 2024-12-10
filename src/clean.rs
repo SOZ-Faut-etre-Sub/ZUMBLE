@@ -58,7 +58,6 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
     }
 
     for client in client_to_disconnect {
-
         match client.publisher.try_send(ClientMessage::Disconnect) {
             Ok(_) => (),
             Err(err) => {

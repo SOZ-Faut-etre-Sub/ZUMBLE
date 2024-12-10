@@ -9,7 +9,7 @@ use crate::server::constants::MAX_CLIENTS;
 use crate::voice::{ServerBound, VoicePacket};
 use bytes::BytesMut;
 use protobuf::Message;
-use scc::{HashCache, HashMap, HashSet};
+use scc::{HashCache, HashMap};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -17,7 +17,6 @@ use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
-use tokio::time::Instant;
 use tokio_rustls::server::TlsStream;
 
 pub struct CodecState {
