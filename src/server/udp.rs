@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::io::Cursor;
 use tokio::net::UdpSocket;
 
-use super::constants::{MAX_BANDWIDTH, MAX_CLIENTS};
+use super::constants::{MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
 
 pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef) {
     loop {
@@ -67,7 +67,7 @@ async fn handle_packet(
         // max user count
         send.write_u32::<byteorder::BigEndian>(MAX_CLIENTS as u32)?;
         // max bandwidth per user
-        send.write_u32::<byteorder::BigEndian>(MAX_BANDWIDTH)?;
+        send.write_u32::<byteorder::BigEndian>(MAX_BANDWIDTH_IN_BITS)?;
 
         socket.send_to(send.get_ref().as_slice(), addr).await?;
 
