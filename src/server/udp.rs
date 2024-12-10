@@ -82,13 +82,15 @@ async fn handle_packet(
         return Ok(());
     }
 
-    if !state.clients_by_peer.contains(&addr.ip()) {
-        tracing::warn!(
-            "UPP: User tried to connect with addr: {} but they didn't connect via TCP before.",
-            addr
-        );
-        return Err(anyhow!("Not a valid peer"));
-    }
+    // This breaks when people are using VPN's, should add an option to use it for servers getting
+    // hit by DDoS's
+    // if !state.clients_by_peer.contains(&addr.ip()) {
+    //     tracing::warn!(
+    //         "UPP: User tried to connect with addr: {} but they didn't connect via TCP before.",
+    //         addr
+    //     );
+    //     return Err(anyhow!("Not a valid peer"));
+    // }
 
     let client_opt = state.get_client_by_socket(&addr);
 
