@@ -12,11 +12,12 @@ use bytes::BytesMut;
 use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 use protobuf::Message;
+use tokio::time::timeout;
 use std::fmt::Display;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
@@ -249,7 +250,11 @@ impl Client {
 
             let buf = &dest.freeze()[..];
 
-            self.udp_socket.send_to(buf, addr.as_ref()).await?;
+            match timeout(Duration::from_millis(250), self.udp_socket.send_to(buf, addr.as_ref())).await {
+                Ok(Ok(_)) => Ok(()),
+                Ok(Err(e)) => Err(MumbleError::Io(e)),
+                Err(_) => Err(MumbleError::PacketDiscarded)
+            }?;
 
             crate::metrics::MESSAGES_TOTAL
                 .with_label_values(&["udp", "output", "VoicePacket"])
