@@ -3,7 +3,7 @@ use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UDPTunnel, UserState, Version};
 use crate::proto::{expected_message, message_to_bytes, send_message, MessageKind};
-use crate::server::constants::MAX_BANDWIDTH;
+use crate::server::constants::MAX_BANDWIDTH_IN_BITS;
 use crate::state::ServerStateRef;
 use crate::target::VoiceTarget;
 use crate::voice::{encode_voice_packet, ClientBound, VoicePacket};
@@ -224,7 +224,7 @@ impl Client {
 
     pub async fn send_server_sync(&self) -> Result<(), MumbleError> {
         let mut server_sync = ServerSync::default();
-        server_sync.set_max_bandwidth(MAX_BANDWIDTH);
+        server_sync.set_max_bandwidth(MAX_BANDWIDTH_IN_BITS);
         server_sync.set_session(self.session_id);
         server_sync.set_welcome_text("SoZ Mumble Server".to_string());
 

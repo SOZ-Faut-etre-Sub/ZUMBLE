@@ -3,7 +3,7 @@ use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
 use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
-use crate::server::constants::MAX_CLIENTS;
+use crate::server::constants::{MAX_BANDWIDTH_IN_BYTES, MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
 use crate::state::ServerStateRef;
 use actix_server::Server;
 use actix_service::fn_service;
@@ -72,7 +72,7 @@ async fn handle_new_client(
     let (version, authenticate, crypt_state) = Client::init(&mut stream, server_version).await.context("init client")?;
 
     let (read, write) = io::split(stream);
-    let (tx, rx) = mpsc::channel(1024 * 10);
+    let (tx, rx) = mpsc::channel(MAX_BANDWIDTH_IN_BYTES);
 
     let username = authenticate.get_username().to_string();
     let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip);
