@@ -3,7 +3,7 @@ use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
 use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
-use crate::server::constants::{MAX_BANDWIDTH_IN_BYTES, MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
+use crate::server::constants::{MAX_BANDWIDTH_IN_BYTES, MAX_CLIENTS};
 use crate::state::ServerStateRef;
 use actix_server::Server;
 use actix_service::fn_service;

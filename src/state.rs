@@ -75,10 +75,7 @@ pub struct ServerState {
 impl ServerState {
     pub fn new(socket: Arc<UdpSocket>) -> Self {
         let channels = HashMap::new();
-        channels.upsert(
-            0,
-            Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false),
-        );
+        channels.upsert(0, Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false));
 
         Self {
             // we preallocate the maximum amount of clients to prevent the possibility of resizes
@@ -393,7 +390,7 @@ impl ServerState {
 
             // This is a hack to get the publisher out of its loop, if its already out of its loop
             // then we don't care and we can just ignore it
-            let _ = client.publisher.try_send(ClientMessage::Disconnect); 
+            let _ = client.publisher.try_send(ClientMessage::Disconnect);
 
             let socket = client.udp_socket_addr.swap(None);
             // let mut should_remove = false;

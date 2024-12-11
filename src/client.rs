@@ -12,7 +12,6 @@ use bytes::BytesMut;
 use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 use protobuf::Message;
-use tokio::time::timeout;
 use std::fmt::Display;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -21,6 +20,7 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
+use tokio::time::timeout;
 use tokio_rustls::server::TlsStream;
 
 pub type ClientRef = Arc<Client>;
@@ -253,7 +253,7 @@ impl Client {
             match timeout(Duration::from_millis(250), self.udp_socket.send_to(buf, addr.as_ref())).await {
                 Ok(Ok(_)) => Ok(()),
                 Ok(Err(e)) => Err(MumbleError::Io(e)),
-                Err(_) => Err(MumbleError::PacketDiscarded)
+                Err(_) => Err(MumbleError::PacketDiscarded),
             }?;
 
             crate::metrics::MESSAGES_TOTAL

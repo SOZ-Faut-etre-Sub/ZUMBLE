@@ -1,5 +1,4 @@
 use crate::error::MumbleError;
-use crate::message::ClientMessage;
 use crate::state::{ServerState, ServerStateRef};
 use std::sync::Arc;
 use std::time::Instant;
