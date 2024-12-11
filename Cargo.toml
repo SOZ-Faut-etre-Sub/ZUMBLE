@@ -36,6 +36,7 @@ crossbeam = "0.8.4"
 axum = { version = "0.7.9", features = ["macros"] }
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 axum-auth = "0.7.0"
+console-subscriber = "0.4.1"
 
 [profile.release]
 # codegen-units = 1
