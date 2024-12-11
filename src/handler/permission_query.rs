@@ -29,7 +29,7 @@ const PERM_DEFAULT: u32 = PERM_TRAVERSE | PERM_ENTER | PERM_SPEAK | PERM_WHISPER
 const PERM_ADMIN: u32 = PERM_DEFAULT | PERM_MUTEDEAFEN | PERM_MOVE | PERM_KICK | PERM_BAN;
 
 impl Handler for PermissionQuery {
-    async fn handle(&self, _state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
+    async fn handle(&self, _state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError> {
         let mut pq = PermissionQuery::new();
         pq.set_channel_id(self.get_channel_id());
         pq.set_permissions(PERM_ADMIN);

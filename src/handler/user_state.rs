@@ -5,7 +5,7 @@ use crate::proto::mumble::UserState;
 use crate::state::ServerStateRef;
 
 impl Handler for UserState {
-    async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
+    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError> {
         let session_id = { client.session_id };
 
         if self.get_session() != session_id {
@@ -15,7 +15,7 @@ impl Handler for UserState {
         client.update(self);
 
         if self.has_channel_id() {
-            state.set_client_channel(client.clone(), self.get_channel_id())?;
+            state.set_client_channel(&client, self.get_channel_id())?;
         }
 
         for channel_id in self.get_listening_channel_add() {

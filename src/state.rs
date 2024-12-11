@@ -158,13 +158,13 @@ impl ServerState {
         None
     }
 
-    pub fn set_client_socket(&self, client: ClientRef, addr: SocketAddr) {
+    pub fn set_client_socket(&self, client: &ClientRef, addr: SocketAddr) {
         let socket_lock = client.udp_socket_addr.swap(Some(Arc::new(addr)));
         if let Some(exiting_addr) = socket_lock {
             self.clients_by_socket.remove(exiting_addr.as_ref());
         }
 
-        self.clients_by_socket.upsert(addr, client);
+        self.clients_by_socket.upsert(addr, client.clone());
     }
 
     pub fn broadcast_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
@@ -216,7 +216,7 @@ impl ServerState {
         Some(leave_channel_id)
     }
 
-    pub fn set_client_channel(&self, client: ClientRef, channel: u32) -> Result<(), MumbleError> {
+    pub fn set_client_channel(&self, client: &ClientRef, channel: u32) -> Result<(), MumbleError> {
         let leave_channel_id = client.join_channel(channel);
 
         tracing::info!(
@@ -339,7 +339,7 @@ impl ServerState {
 
             match decrypt_result {
                 Ok(p) => {
-                    self.set_client_socket(c.clone(), addr);
+                    self.set_client_socket(c, addr);
                     client = Some(c.clone());
                     packet = Some(p);
                 }
@@ -361,8 +361,8 @@ impl ServerState {
     ///
     /// Resets the clients crypt state and removes their udp socket so we no longer take invalid
     /// data from the UDP stream
-    pub async fn reset_client_crypt(&self, client: ClientRef) -> Result<(), MumbleError> {
-        self.clients_without_udp.upsert(client.session_id, Arc::clone(&client));
+    pub async fn reset_client_crypt(&self, client: &ClientRef) -> Result<(), MumbleError> {
+        self.clients_without_udp.upsert(client.session_id, Arc::clone(client));
 
         // swap out the clients socket with none so we don't try to reuse the old socket
         let address_option = client.remove_udp_socket();

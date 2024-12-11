@@ -5,7 +5,7 @@ use crate::proto::mumble::Version;
 use crate::state::ServerStateRef;
 
 impl Handler for Version {
-    async fn handle(&self, _state: ServerStateRef, _client: ClientRef) -> Result<(), MumbleError> {
+    async fn handle(&self, _state: &ServerStateRef, _client: &ClientRef) -> Result<(), MumbleError> {
         Ok(())
     }
 }

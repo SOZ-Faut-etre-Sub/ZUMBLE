@@ -124,7 +124,7 @@ pub async fn client_run(
     }
 
     loop {
-        match MessageHandler::handle(&mut read, &mut receiver, state.clone(), client.clone()).await {
+        match MessageHandler::handle(&mut read, &mut receiver, &state, &client).await {
             Ok(_) => (),
             Err(e) => {
                 if e.is::<io::Error>() {

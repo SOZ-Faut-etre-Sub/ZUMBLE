@@ -8,7 +8,7 @@ mod version;
 mod voice_packet;
 mod voice_target;
 
-use anyhow::anyhow;
+// use anyhow::anyhow;
 
 use crate::client::ClientRef;
 use crate::error::MumbleError;
@@ -24,13 +24,13 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::Receiver;
 
 pub trait Handler {
-    async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError>;
+    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError>;
 }
 
 pub struct MessageHandler;
 
 impl MessageHandler {
-    async fn try_handle<T: Message + Handler>(buf: &[u8], state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
+    async fn try_handle<T: Message + Handler>(buf: &[u8], state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError> {
         let message = T::parse_from_bytes(buf)?;
 
         tracing::trace!("[{}] handle message: {:?}, {:?}", client, std::any::type_name::<T>(), message);
@@ -42,8 +42,8 @@ impl MessageHandler {
     pub async fn handle<S: AsyncRead + Unpin>(
         stream: &mut S,
         consumer: &mut Receiver<ClientMessage>,
-        state: ServerStateRef,
-        client: ClientRef,
+        state: &ServerStateRef,
+        client: &ClientRef,
     ) -> Result<(), anyhow::Error> {
         tokio::select! {
             kind_read = stream.read_u16() => {

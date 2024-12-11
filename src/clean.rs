@@ -47,12 +47,11 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
     }
 
     for client in clients_to_reset_crypt {
-        let log_name = Arc::clone(&client);
         let session_id = client.session_id;
-        if let Err(e) = state.reset_client_crypt(client).await {
+        if let Err(e) = state.reset_client_crypt(&client).await {
             tracing::error!("failed to send crypt setup for {}: {:?}", e, session_id);
         } else {
-            tracing::info!("Requesting {} crypt be reset", log_name);
+            tracing::info!("Requesting {} crypt be reset", client);
         }
     }
 
