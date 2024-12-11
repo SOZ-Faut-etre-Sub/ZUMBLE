@@ -41,17 +41,13 @@ impl Handler for VoicePacket<ClientBound> {
 
                     if let Some(target) = target {
                         target.sessions.scan(|client_id| {
-                            let client_result = state.clients.get(client_id);
-
-                            if let Some(client) = client_result {
+                            if let Some(client) = state.clients.get(client_id) {
                                 listening_clients.insert(*client_id, Arc::clone(&client));
                             }
                         });
 
                         target.channels.scan(|channel_id| {
-                            let channel_result = state.channels.get(channel_id);
-
-                            if let Some(channel) = channel_result {
+                            if let Some(channel) = state.channels.get(channel_id) {
                                 channel.get_listeners().scan(|k, client| {
                                     listening_clients.insert(*k, Arc::clone(client));
                                 });

@@ -1,10 +1,10 @@
 use crate::error::DecryptError;
 use crate::proto::mumble::CryptSetup;
 use crate::voice::{decode_voice_packet, encode_voice_packet, VoicePacket, VoicePacketDst};
-use actix_web::web::BytesMut;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use aes::Aes128;
+use bytes::BytesMut;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::time::Instant;
 

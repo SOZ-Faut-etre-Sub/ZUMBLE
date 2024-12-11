@@ -1,12 +1,12 @@
+use std::net::SocketAddr;
+
 use crate::client::{Client, ClientRef};
 use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
 use crate::proto::mumble::Version;
-use crate::proto::MessageKind;
+use crate::proto::{expected_message, send_message, MessageKind};
 use crate::server::constants::{MAX_BANDWIDTH_IN_BYTES, MAX_CLIENTS};
 use crate::state::ServerStateRef;
-use actix_server::Server;
-use actix_service::fn_service;
 use anyhow::{anyhow, Context};
 use tokio::io::ReadHalf;
 use tokio::io::{self};
@@ -15,34 +15,29 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
 
-pub fn create_tcp_server(tcp_listener: TcpListener, acceptor: TlsAcceptor, server_version: Version, state: ServerStateRef) -> Server {
-    Server::build()
-        .listen(
-            "mumble-tcp",
-            tcp_listener.into_std().expect("cannot create tcp listener"),
-            move || {
-                let acceptor = acceptor.clone();
-                let server_version = server_version.clone();
-                let state = state.clone();
+pub async fn create_tcp_server(
+    tcp_listener: SocketAddr,
+    acceptor: TlsAcceptor,
+    server_version: Version,
+    state: ServerStateRef,
+) -> anyhow::Result<()> {
+    let tls_acceptor = acceptor.clone();
+    let incoming = TcpListener::bind(tcp_listener).await.expect("Failed to create TCP listener");
 
-                fn_service(move |stream: TcpStream| {
-                    let acceptor = acceptor.clone();
-                    let server_version = server_version.clone();
-                    let state = state.clone();
+    loop {
+        let (tcp_stream, _remote_addr) = incoming.accept().await?;
+        let tls_acceptor = tls_acceptor.clone();
 
-                    async move {
-                        match handle_new_client(acceptor, server_version, state, stream).await {
-                            Ok(_) => (),
-                            Err(e) => tracing::error!("handle client error: {:?}", e),
-                        }
+        let server_version = server_version.clone();
+        let state = state.clone();
 
-                        Ok::<(), anyhow::Error>(())
-                    }
-                })
-            },
-        )
-        .expect("cannot create tcp server")
-        .run()
+        tokio::spawn(async move {
+            match handle_new_client(tls_acceptor, server_version, state, tcp_stream).await {
+                Ok(_) => (),
+                Err(e) => tracing::error!("handle client error: {:?}", e),
+            }
+        });
+    }
 }
 
 async fn handle_new_client(
@@ -79,14 +74,16 @@ async fn handle_new_client(
 
     tracing::info!("TCP new client {} connected {}", username, addr);
 
-    match client_run(read, rx, state.clone(), client.clone()).await {
+    let state_cl = state.clone();
+    let client_cl = client.clone();
+    match client_run(read, rx, &state_cl, &client_cl).await {
         Ok(_) => (),
-        Err(e) => tracing::error!("client {} error: {:?}", username, e),
+        Err(e) => (),
     }
 
     tracing::info!("client {} disconnected", username);
 
-    state.disconnect(client.session_id).await;
+    state_cl.disconnect(client.session_id).await;
 
     Ok(())
 }
@@ -94,8 +91,8 @@ async fn handle_new_client(
 pub async fn client_run(
     mut read: ReadHalf<TlsStream<TcpStream>>,
     mut receiver: Receiver<ClientMessage>,
-    state: ServerStateRef,
-    client: ClientRef,
+    state: &ServerStateRef,
+    client: &ClientRef,
 ) -> Result<(), anyhow::Error> {
     let codec_version = { state.check_codec().await? };
 
@@ -104,7 +101,7 @@ pub async fn client_run(
     }
 
     {
-        client.sync_client_and_channels(&state).await.map_err(|e| {
+        client.sync_client_and_channels(state).await.map_err(|e| {
             tracing::error!("init client error during channel sync: {:?}", e);
 
             e
@@ -124,7 +121,7 @@ pub async fn client_run(
     }
 
     loop {
-        match MessageHandler::handle(&mut read, &mut receiver, &state, &client).await {
+        match MessageHandler::handle(&mut read, &mut receiver, state, client).await {
             Ok(_) => (),
             Err(e) => {
                 if e.is::<io::Error>() {

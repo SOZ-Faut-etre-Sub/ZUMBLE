@@ -24,13 +24,16 @@ use crate::proto::mumble::Version;
 use crate::server::{create_tcp_server, create_udp_server};
 use crate::state::ServerState;
 
+use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use rcgen::{date_time_ymd, CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P384_SHA384};
 use rustls::crypto::{self, CryptoProvider};
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::PrivateKeyDer;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
+use tokio::task::JoinSet;
 use tokio_rustls::rustls::{self};
 use tokio_rustls::TlsAcceptor;
 
@@ -51,7 +54,7 @@ struct Args {
     #[clap(long, value_parser, default_value = "admin")]
     http_user: String,
     /// Password for the http server api basic authentification
-    #[clap(long, value_parser)]
+    #[clap(long, value_parser, default_value = None)]
     http_password: Option<String>,
     /// Use TLS for the http server (https), will use the same certificate as the mumble server
     #[clap(long)]
@@ -69,7 +72,7 @@ struct Args {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[actix_web_codegen::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     tracing_subscriber::fmt::init();
 
@@ -104,10 +107,12 @@ async fn main() {
         .with_single_cert(vec![cert.der().clone()], key_der)
         .expect("Unable to create tlsconfig");
 
-    let acceptor = TlsAcceptor::from(Arc::new(config.clone()));
+    let config = Arc::new(config);
 
-    tracing::info!("tcp/udp server start listening on {}", args.listen);
-    tracing::info!("http server start listening on {}", args.http_listen);
+    let http_config = RustlsConfig::from_config(Arc::clone(&config));
+
+    let acceptor = TlsAcceptor::from(Arc::clone(&config));
+
 
     // Simulate 1.4.0 protocol version
     let version = 1 << 16 | 4 << 8 | 0;
@@ -118,46 +123,57 @@ async fn main() {
     server_version.set_release(VERSION.to_string());
     server_version.set_version(version);
 
-    let udp_socket = Arc::new(UdpSocket::bind(&args.listen).await.unwrap());
+    let mut set = JoinSet::new();
+
+    let std_socket = std::net::UdpSocket::bind(&args.listen).unwrap();
+    std_socket.set_nonblocking(true).unwrap();
+
+    let socket = UdpSocket::from_std(std_socket).unwrap();
+
+    let udp_socket = Arc::new(socket);
+
     let state = Arc::new(ServerState::new(udp_socket.clone()));
     let udp_state = state.clone();
 
-    tokio::spawn(async move {
+    tracing::info!("tcp/udp server start listening on {}", args.listen);
+
+    set.spawn(async move {
         create_udp_server(version, udp_socket, udp_state).await;
     });
 
     let clean_state = state.clone();
 
-    tokio::spawn(async move {
+    set.spawn(async move {
         clean_loop(clean_state).await;
     });
 
-    let tcp_listener = TcpListener::bind(args.listen.clone()).await.unwrap();
+    let tcp_addr: SocketAddr = args.listen.parse().expect("Got invalid data for 'listen', it was not a usable ip");
 
-    let mut waiting_list = Vec::new();
-
+    let tcp_state = state.clone();
     // Create tcp server
-    let server = create_tcp_server(tcp_listener, acceptor, server_version, state.clone());
-    waiting_list.push(server);
+    set.spawn(async move {
+        create_tcp_server(tcp_addr, acceptor, server_version, tcp_state).await;
+    });
 
-    let http_server = create_http_server(
-        args.http_listen,
-        config,
-        args.https,
-        state.clone(),
-        args.http_user,
-        args.http_password,
-        args.http_log,
-    );
+    let http_server = create_http_server(state.clone(), args.http_user, args.http_password);
 
     if let Some(http_server) = http_server {
-        waiting_list.push(http_server);
+        tracing::info!("http server start listening on {}", args.http_listen);
+        set.spawn(async move {
+            let socket_addr: SocketAddr = args.http_listen.parse().expect("Invalid socket for http_listen");
+            if args.https {
+                axum_server::bind_rustls(socket_addr, http_config)
+                    .serve(http_server.into_make_service())
+                    .await
+                    .unwrap();
+                } else {
+                    axum_server::bind(socket_addr).serve(http_server.into_make_service()).await.unwrap();
+            }
+        });
+    } else {
+        tracing::info!("http server not started, no auth password provided");
     }
 
-    match futures::future::try_join_all(waiting_list).await {
-        Ok(_) => (),
-        Err(e) => {
-            tracing::error!("agent error: {}", e);
-        }
-    }
+    while let Some(res) = set.join_next().await {}
+
 }

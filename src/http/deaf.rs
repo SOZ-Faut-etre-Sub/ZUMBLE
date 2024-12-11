@@ -1,6 +1,12 @@
-use crate::{error::MumbleError, state::ServerStateRef};
-use actix_web::{web, HttpResponse};
+use crate::state::ServerStateRef;
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::{Deserialize, Serialize};
+
+use super::AppStateRef;
 
 #[derive(Serialize, Deserialize)]
 pub struct Deaf {
@@ -8,35 +14,31 @@ pub struct Deaf {
     user: String,
 }
 
-#[actix_web::post("/deaf")]
-pub async fn post_deaf(deaf: web::Json<Deaf>, state: web::Data<ServerStateRef>) -> Result<HttpResponse, MumbleError> {
-    let client = { state.get_client_by_name(deaf.user.as_str()) };
+// #[actix_web::post("/deaf")]
+pub async fn post_deaf(State(state): State<AppStateRef>, Json(deaf): Json<Deaf>) -> StatusCode {
+    let client = { state.server.get_client_by_name(deaf.user.as_str()) };
 
-    Ok(match client {
+    match client {
         Some(client) => {
             client.set_deaf(deaf.deaf);
 
-            HttpResponse::Ok().finish()
+            StatusCode::OK
         }
-        None => HttpResponse::NotFound().finish(),
-    })
+        None => StatusCode::NOT_FOUND,
+    }
 }
 
-#[actix_web::get("/deaf/{user}")]
-pub async fn get_deaf(user: web::Path<String>, state: web::Data<ServerStateRef>) -> Result<HttpResponse, MumbleError> {
-    let username = user.into_inner();
-    let client = { state.get_client_by_name(username.as_str()) };
+// #[actix_web::get("/deaf/{user}")]
+pub async fn get_deaf(Path(username): Path<String>, State(state): State<AppStateRef>) -> Result<Json<Deaf>, StatusCode> {
+    println!("??");
+    if let Some(client) = state.server.get_client_by_name(username.as_str()) {
+        let deaf = Deaf {
+            deaf: client.is_deaf(),
+            user: username,
+        };
 
-    let var_name = match client {
-        Some(client) => {
-            let deaf = Deaf {
-                deaf: client.is_deaf(),
-                user: username,
-            };
+        return Ok(Json(deaf));
+    }
 
-            HttpResponse::Ok().json(&deaf)
-        }
-        None => HttpResponse::NotFound().finish(),
-    };
-    Ok(var_name)
+    Err(StatusCode::NOT_FOUND)
 }

@@ -4,13 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-actix-rt = "2.10.0"
-actix-server = "2.5.0"
-actix-service = "2.0.2"
-actix-tls = { version= "3.4.0", features = ["rustls-0_23"] }
-actix-web = { version = "4.9.0", features = ["rustls-0_23"] }
-actix-web-codegen = "4.3.0"
-actix-web-httpauth = "0.8.2"
 aes = "0.8.4"
 anyhow = "1.0.93"
 async-trait = "0.1.83"
@@ -40,6 +33,9 @@ scc = "2.2.5"
 parking_lot = "0.12.3"
 arc-swap = "1.7.1"
 crossbeam = "0.8.4"
+axum = { version = "0.7.9", features = ["macros"] }
+axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
+axum-auth = "0.7.0"
 
 [profile.release]
 # codegen-units = 1

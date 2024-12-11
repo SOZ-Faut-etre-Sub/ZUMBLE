@@ -24,7 +24,7 @@ pub enum MumbleError {
     PacketDiscarded,
 }
 
-impl actix_web::error::ResponseError for MumbleError {}
+// impl actix_web::error::ResponseError for MumbleError {}
 
 #[derive(Error, Debug)]
 pub enum DecryptError {
