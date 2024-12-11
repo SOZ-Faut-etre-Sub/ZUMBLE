@@ -30,6 +30,8 @@ use rcgen::{date_time_ymd, CertificateParams, DistinguishedName, DnType, KeyPair
 use rustls::crypto::{self, CryptoProvider};
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::PrivateKeyDer;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
@@ -72,9 +74,13 @@ struct Args {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    let console_layer = console_subscriber::spawn();
+    tracing_subscriber::registry()
+        .with(console_layer)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     let args = Args::parse();
 
