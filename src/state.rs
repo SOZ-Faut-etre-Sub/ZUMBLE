@@ -13,7 +13,7 @@ use scc::{HashCache, HashMap};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use tokio::io::WriteHalf;
+use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
@@ -374,7 +374,7 @@ impl ServerState {
         client.send_crypt_setup(true).await
     }
 
-    pub fn disconnect(&self, client_session: u32) {
+    pub async fn disconnect(&self, client_session: u32) {
         crate::metrics::CLIENTS_TOTAL.dec();
 
         let client = self.clients.remove(&client_session);
@@ -391,6 +391,10 @@ impl ServerState {
             // This is a hack to get the publisher out of its loop, if its already out of its loop
             // then we don't care and we can just ignore it
             let _ = client.publisher.try_send(ClientMessage::Disconnect);
+
+            // close the writer instantly so even if there's any References to client still, we will
+            // still remove the socket as soon as we can.
+            let _ = client.write.lock().await.shutdown().await;
 
             let socket = client.udp_socket_addr.swap(None);
             // let mut should_remove = false;
