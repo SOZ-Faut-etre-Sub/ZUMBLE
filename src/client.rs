@@ -85,11 +85,11 @@ impl Client {
         write: WriteHalf<TlsStream<TcpStream>>,
         udp_socket: Arc<UdpSocket>,
         publisher: Sender<ClientMessage>,
-    ) -> Self {
+    ) -> Arc<Self> {
         // let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
         let targets: VoiceTargetArray = core::array::from_fn(|_v| Arc::new(VoiceTarget::default()));
 
-        Self {
+        Arc::new(Self {
             // version,
             session_id,
             log_name: Arc::new(format!("{} [session id: {}]", authenticate.get_username(), session_id)),
@@ -109,7 +109,7 @@ impl Client {
             publisher,
             targets,
             last_ping: AtomicCell::new(Instant::now()),
-        }
+        })
     }
 
     /// Gets the current voice target for the specific id

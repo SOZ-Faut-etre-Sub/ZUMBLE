@@ -19,7 +19,7 @@ pub struct Channel {
 }
 
 impl Channel {
-    pub fn new(id: u32, parent_id: Option<u32>, name: String, description: String, temporary: bool) -> Self {
+    pub fn new(id: u32, parent_id: Option<u32>, name: String, description: String, temporary: bool) -> Arc<Self> {
         let mut state = ChannelState::new();
 
         state.set_channel_id(id);
@@ -33,7 +33,7 @@ impl Channel {
         state.set_temporary(temporary);
         state.set_position(id as i32);
 
-        Self {
+        Arc::new(Self {
             id,
             channel_state_cache: Arc::new(state),
             parent_id,
@@ -42,11 +42,11 @@ impl Channel {
             temporary,
             clients: HashMap::new(),
             listeners: HashMap::new(),
-        }
+        })
     }
 
     pub fn get_channel_state(&self) -> Arc<ChannelState> {
-        self.channel_state_cache.clone()
+        Arc::clone(&self.channel_state_cache)
     }
 
     pub fn get_listeners(&self) -> &HashMap<u32, ClientRef> {

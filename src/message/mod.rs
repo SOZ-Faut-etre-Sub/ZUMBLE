@@ -7,6 +7,6 @@ use std::sync::Arc;
 pub enum ClientMessage {
     RouteVoicePacket(VoicePacket<ClientBound>),
     SendVoicePacket(Arc<VoicePacket<ClientBound>>),
-    SendMessage { kind: MessageKind, payload: Bytes },
+    SendMessage { kind: MessageKind, payload: Arc<Bytes> },
     Disconnect,
 }

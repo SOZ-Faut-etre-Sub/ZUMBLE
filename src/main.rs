@@ -122,13 +122,13 @@ async fn main() {
     let state = Arc::new(ServerState::new(udp_socket.clone()));
     let udp_state = state.clone();
 
-    actix_rt::spawn(async move {
+    tokio::spawn(async move {
         create_udp_server(version, udp_socket, udp_state).await;
     });
 
     let clean_state = state.clone();
 
-    actix_rt::spawn(async move {
+    tokio::spawn(async move {
         clean_loop(clean_state).await;
     });
 

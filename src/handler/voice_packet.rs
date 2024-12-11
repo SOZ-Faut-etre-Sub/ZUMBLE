@@ -30,8 +30,8 @@ impl Handler for VoicePacket<ClientBound> {
                     let channel_result = state.channels.get(&channel_id);
 
                     if let Some(channel) = channel_result {
-                        channel.get_clients().scan(|k, v| {
-                            listening_clients.insert(*k, v.clone());
+                        channel.get_clients().scan(|k, client| {
+                            listening_clients.insert(*k, Arc::clone(client));
                         });
                     }
                 }
@@ -44,7 +44,7 @@ impl Handler for VoicePacket<ClientBound> {
                             let client_result = state.clients.get(client_id);
 
                             if let Some(client) = client_result {
-                                listening_clients.insert(*client_id, client.clone());
+                                listening_clients.insert(*client_id, Arc::clone(&client));
                             }
                         });
 
@@ -52,12 +52,12 @@ impl Handler for VoicePacket<ClientBound> {
                             let channel_result = state.channels.get(channel_id);
 
                             if let Some(channel) = channel_result {
-                                channel.get_listeners().scan(|k, v| {
-                                    listening_clients.insert(*k, v.clone());
+                                channel.get_listeners().scan(|k, client| {
+                                    listening_clients.insert(*k, Arc::clone(client));
                                 });
 
-                                channel.get_clients().scan(|k, v| {
-                                    listening_clients.insert(*k, v.clone());
+                                channel.get_clients().scan(|k, client| {
+                                    listening_clients.insert(*k, Arc::clone(client));
                                 });
                             }
                         });
@@ -65,7 +65,7 @@ impl Handler for VoicePacket<ClientBound> {
                 }
                 // Loopback
                 31 => {
-                    client.send_voice_packet(packet.clone()).await?;
+                    client.send_voice_packet(Arc::clone(&packet)).await?;
 
                     return Ok(());
                 }
@@ -74,17 +74,18 @@ impl Handler for VoicePacket<ClientBound> {
                 }
             }
 
+            // remove the calling client from the session list so we don't have to branch here.
+            listening_clients.remove(session_id);
+
             for client in listening_clients.values() {
                 if client.is_deaf() {
                     continue;
                 }
 
-                if client.session_id != *session_id {
-                    match client.publisher.try_send(ClientMessage::SendVoicePacket(packet.clone())) {
-                        Ok(_) => {}
-                        Err(err) => {
-                            tracing::error!("error sending voice packet message to {}: {}", client, err);
-                        }
+                match client.publisher.try_send(ClientMessage::SendVoicePacket(Arc::clone(&packet))) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        tracing::error!("error sending voice packet message to {}: {}", client, err);
                     }
                 }
             }
