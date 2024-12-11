@@ -5,7 +5,7 @@ use crate::proto::mumble::VoiceTarget;
 use crate::state::ServerStateRef;
 
 impl Handler for VoiceTarget {
-    async fn handle(&self, _: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
+    async fn handle(&self, _: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError> {
         // mumble spec limits the usable voice targets to 1..=30
         if self.get_id() < 1 || self.get_id() >= 31 {
             tracing::error!("invalid voice target id: {}", self.get_id());

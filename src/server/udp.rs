@@ -129,7 +129,7 @@ async fn handle_packet(
                     if restart_crypt {
                         tracing::error!("client {} udp decrypt error: {}, reset crypt setup", client, err);
 
-                        if let Err(e) = state.reset_client_crypt(client.clone()).await {
+                        if let Err(e) = state.reset_client_crypt(&client).await {
                             tracing::error!("failed to send crypt setup: {:?}", e);
                         }
                     }

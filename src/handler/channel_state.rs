@@ -6,7 +6,7 @@ use crate::proto::MessageKind;
 use crate::state::ServerStateRef;
 
 impl Handler for ChannelState {
-    async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
+    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError> {
         if self.has_channel_id() {
             tracing::warn!("editing channel is not supported");
 

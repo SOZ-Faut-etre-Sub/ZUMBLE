@@ -10,7 +10,7 @@ use std::sync::Arc;
 use super::Handler;
 
 impl Handler for VoicePacket<ClientBound> {
-    async fn handle(&self, state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
+    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError> {
         let mute = client.is_muted();
 
         if mute {

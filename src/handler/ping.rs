@@ -7,7 +7,7 @@ use crate::state::ServerStateRef;
 use std::time::Instant;
 
 impl Handler for Ping {
-    async fn handle(&self, _state: ServerStateRef, client: ClientRef) -> Result<(), MumbleError> {
+    async fn handle(&self, _state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError> {
         let mut ping = Ping::default();
         ping.set_timestamp(self.get_timestamp());
 
