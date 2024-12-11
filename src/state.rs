@@ -64,7 +64,7 @@ pub struct ServerState {
     pub clients_without_udp: HashMap<u32, ClientRef>,
     pub clients_by_socket: HashMap<SocketAddr, ClientRef>,
     // pub clients_by_peer: HashMap<IpAddr, AtomicU32>,
-    pub channels: HashMap<u32, Arc<Channel>>,
+    pub channels: HashMap<u32, ChannelRef>,
     pub codec_state: Arc<RwLock<CodecState>>,
     pub socket: Arc<UdpSocket>,
     pub logs: HashCache<SocketAddr, ()>,
@@ -77,7 +77,7 @@ impl ServerState {
         let channels = HashMap::new();
         channels.upsert(
             0,
-            Arc::new(Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false)),
+            Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false),
         );
 
         Self {
@@ -107,7 +107,7 @@ impl ServerState {
     ) -> ClientRef {
         let session_id = self.get_free_session_id();
 
-        let client = Arc::new(Client::new(
+        let client = Client::new(
             version,
             authenticate,
             session_id,
@@ -116,7 +116,7 @@ impl ServerState {
             write,
             Arc::clone(&self.socket),
             publisher,
-        ));
+        );
 
         crate::metrics::CLIENTS_TOTAL.inc();
         self.clients.upsert(session_id, Arc::clone(&client));
@@ -133,17 +133,17 @@ impl ServerState {
 
     pub fn add_channel(&self, state: &ChannelState) -> ChannelRef {
         let channel_id = self.get_free_channel_id();
-        let channel = Arc::new(Channel::new(
+        let channel = Channel::new(
             channel_id,
             Some(state.get_parent()),
             state.get_name().to_string(),
             state.get_description().to_string(),
             state.get_temporary(),
-        ));
+        );
 
         tracing::debug!("Created channel {} with name {}", channel_id, state.get_name().to_string());
 
-        self.channels.upsert(channel_id, channel.clone());
+        self.channels.upsert(channel_id, Arc::clone(&channel));
 
         channel
     }
@@ -152,7 +152,7 @@ impl ServerState {
         let client = self.clients.any_entry(|_k, client| client.authenticate.get_username() == name);
 
         if let Some(cl) = client {
-            return Some(cl.clone());
+            return Some(Arc::clone(cl.get()));
         }
 
         None
@@ -164,7 +164,7 @@ impl ServerState {
             self.clients_by_socket.remove(exiting_addr.as_ref());
         }
 
-        self.clients_by_socket.upsert(addr, client.clone());
+        self.clients_by_socket.upsert(addr, Arc::clone(client));
     }
 
     pub fn broadcast_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
@@ -172,10 +172,12 @@ impl ServerState {
 
         let bytes = message_to_bytes(kind, message)?;
 
+        let bytes = Arc::new(bytes);
+
         self.clients.scan(|_k, client| {
             match client.publisher.try_send(ClientMessage::SendMessage {
                 kind,
-                payload: bytes.clone(),
+                payload: Arc::clone(&bytes),
             }) {
                 Ok(_) => {}
                 Err(err) => {
@@ -227,7 +229,7 @@ impl ServerState {
         );
 
         if let Some(channel) = self.channels.get(&channel) {
-            channel.get_clients().upsert(client.session_id, client.clone());
+            channel.clients.upsert(client.session_id, Arc::clone(client));
         } else {
             return Err(MumbleError::ChannelDoesntExist);
         }
@@ -254,7 +256,7 @@ impl ServerState {
         let client = self.channels.any_entry(|_k, channel| channel.name == name);
 
         if let Some(cl) = client {
-            return Some(cl.clone());
+            return Some(Arc::clone(&cl));
         }
 
         None
@@ -309,7 +311,7 @@ impl ServerState {
     }
 
     pub fn get_client_by_socket(&self, socket_addr: &SocketAddr) -> Option<ClientRef> {
-        self.clients_by_socket.get(socket_addr).map(|client| client.clone())
+        self.clients_by_socket.get(socket_addr).map(|client| Arc::clone(client.get()))
     }
 
     pub fn remove_client_by_socket(&self, socket_addr: &SocketAddr) {
@@ -340,7 +342,7 @@ impl ServerState {
             match decrypt_result {
                 Ok(p) => {
                     self.set_client_socket(c, addr);
-                    client = Some(c.clone());
+                    client = Some(Arc::clone(c));
                     packet = Some(p);
                 }
                 Err(err) => {
