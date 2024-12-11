@@ -7,9 +7,9 @@ use anyhow::anyhow;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
+use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::io::Cursor;
 use tokio::net::UdpSocket;
 
 use super::constants::{MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
