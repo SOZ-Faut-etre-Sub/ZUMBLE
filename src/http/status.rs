@@ -1,10 +1,12 @@
-use crate::error::MumbleError;
 use crate::state::ServerStateRef;
-use actix_web::{web, HttpResponse};
+use axum::extract::State;
+use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::time::Instant;
+
+use super::AppStateRef;
 
 #[derive(Serialize, Deserialize)]
 pub struct MumbleClient {
@@ -26,14 +28,14 @@ pub struct MumbleTarget {
     pub channels: HashSet<u32>,
 }
 
-#[actix_web::get("/status")]
-pub async fn get_status(state: web::Data<ServerStateRef>) -> Result<HttpResponse, MumbleError> {
+// #[actix_web::get("/status")]
+pub async fn get_status(State(state): State<AppStateRef>) -> Json<HashMap<u32, MumbleClient>> {
     let mut clients = HashMap::new();
-    let mut iter = state.clients.first_entry_async().await;
+    let mut iter = state.server.clients.first_entry_async().await;
     while let Some(client) = iter {
         let session = client.session_id;
         let channel_id = { client.channel_id.load(Ordering::Relaxed) };
-        let channel = { state.channels.get(&channel_id) };
+        let channel = { state.server.channels.get(&channel_id) };
         let channel_name = {
             if let Some(channel) = channel {
                 Some(channel.name.clone())
@@ -83,5 +85,5 @@ pub async fn get_status(state: web::Data<ServerStateRef>) -> Result<HttpResponse
         iter = client.next_async().await;
     }
 
-    Ok(HttpResponse::Ok().json(&clients))
+    Json(clients)
 }

@@ -22,27 +22,36 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
     let mut clients_to_remove = Vec::new();
     let mut clients_to_reset_crypt = Vec::new();
 
-    let mut iter = state.clients.first_entry();
-    while let Some(client) = iter {
-        if client.publisher.is_closed() {
-            clients_to_remove.push(client.session_id);
+    {
+        let mut iter = state.clients.first_entry();
+        while let Some(client) = iter {
+            // if we can reset our crypt state, we should block resets if we hare being removed or
+            // if the publisher is closed
+            let mut can_reset_crypt = true;
+            if client.publisher.is_closed() {
+                can_reset_crypt = false;
+                clients_to_remove.push(client.session_id);
+            }
+
+            let now = Instant::now();
+
+            let duration = now.duration_since(client.last_ping.load());
+
+            if duration.as_secs() > 30 {
+                can_reset_crypt = false;
+                clients_to_remove.push(client.session_id);
+            }
+
+            // if can_reset_crypt {
+            let last_good = { client.crypt_state.lock().last_good };
+
+            if now.duration_since(last_good).as_millis() > 8000 {
+                clients_to_reset_crypt.push(Arc::clone(client.get()))
+            }
+            // }
+
+            iter = client.next();
         }
-
-        let now = Instant::now();
-
-        let duration = now.duration_since(client.last_ping.load());
-
-        if duration.as_secs() > 30 {
-            clients_to_remove.push(client.session_id);
-        }
-
-        let last_good = { client.crypt_state.lock().last_good };
-
-        if now.duration_since(last_good).as_millis() > 8000 {
-            clients_to_reset_crypt.push(Arc::clone(client.get()))
-        }
-
-        iter = client.next();
     }
 
     for client in clients_to_reset_crypt {

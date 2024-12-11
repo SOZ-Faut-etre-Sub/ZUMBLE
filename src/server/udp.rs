@@ -25,15 +25,16 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
 
 async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef) -> Result<(), anyhow::Error> {
     let mut buffer = BytesMut::zeroed(1024);
-    let (size, addr) = socket.recv_from(&mut buffer).await?;
-    buffer.resize(size, 0);
+    if let Ok((size, addr)) = socket.recv_from(&mut buffer).await {
+        buffer.resize(size, 0);
 
-    tokio::spawn(async move {
-        match handle_packet(buffer, size, addr, protocol_version, socket, state).await {
-            Ok(_) => (),
-            Err(e) => tracing::error!("udp server handle packet error: {:?}", e),
-        }
-    });
+        tokio::spawn(async move {
+            match handle_packet(buffer, size, addr, protocol_version, socket, state).await {
+                Ok(_) => (),
+                Err(e) => tracing::error!("udp server handle packet error: {:?}", e),
+            }
+        });
+    }
 
     Ok(())
 }

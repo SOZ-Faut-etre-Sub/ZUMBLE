@@ -1,6 +1,12 @@
-use crate::{error::MumbleError, state::ServerStateRef};
-use actix_web::{web, HttpResponse};
+use axum::{
+    debug_handler,
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::{Deserialize, Serialize};
+
+use super::{AppState, AppStateRef};
 
 #[derive(Serialize, Deserialize)]
 pub struct Mute {
@@ -8,34 +14,26 @@ pub struct Mute {
     user: String,
 }
 
-#[actix_web::post("/mute")]
-pub async fn post_mute(mute: web::Json<Mute>, state: web::Data<ServerStateRef>) -> Result<HttpResponse, MumbleError> {
-    let client = { state.get_client_by_name(mute.user.as_str()) };
+pub async fn post_mute(State(state): State<AppStateRef>, Json(mute): Json<Mute>) -> StatusCode {
+    if let Some(client) = state.server.get_client_by_name(mute.user.as_str()) {
+        client.set_mute(mute.mute);
 
-    Ok(match client {
-        Some(client) => {
-            client.set_mute(mute.mute);
-
-            HttpResponse::Ok().finish()
-        }
-        None => HttpResponse::NotFound().finish(),
-    })
+        StatusCode::OK
+    } else {
+        StatusCode::NOT_FOUND
+    }
 }
 
-#[actix_web::get("/mute/{user}")]
-pub async fn get_mute(user: web::Path<String>, state: web::Data<ServerStateRef>) -> Result<HttpResponse, MumbleError> {
-    let username = user.into_inner();
-    let client = { state.get_client_by_name(username.as_str()) };
+// #[actix_web::get("/mute/{user}")]
+pub async fn get_mute(Path(username): Path<String>, State(state): State<AppStateRef>) -> Result<Json<Mute>, StatusCode> {
+    if let Some(client) = state.server.get_client_by_name(username.as_str()) {
+        let mute = Mute {
+            mute: client.is_muted(),
+            user: username,
+        };
 
-    Ok(match client {
-        Some(client) => {
-            let mute = Mute {
-                mute: client.is_muted(),
-                user: username,
-            };
+        return Ok(Json(mute));
+    }
 
-            HttpResponse::Ok().json(&mute)
-        }
-        None => HttpResponse::NotFound().finish(),
-    })
+    Err(StatusCode::NOT_FOUND)
 }
