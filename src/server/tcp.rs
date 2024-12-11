@@ -86,7 +86,7 @@ async fn handle_new_client(
 
     tracing::info!("client {} disconnected", username);
 
-    state.disconnect(client.session_id);
+    state.disconnect(client.session_id).await;
 
     Ok(())
 }
