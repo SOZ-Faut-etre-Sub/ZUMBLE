@@ -43,19 +43,19 @@ impl Handler for ChannelState {
             return Ok(());
         }
 
-        let existing_channel = state.get_channel_by_name(name);
+        let existing_channel = state.get_channel_by_name(name).await;
         if existing_channel.is_some() {
             return Ok(());
         }
 
-        let channel = { state.add_channel(self) };
+        let channel = state.add_channel(self).await;
         let channel_state = { channel.get_channel_state() };
 
         tracing::debug!("Created channel {}, requested by {}", channel.id, client.session_id);
 
         let err = state.broadcast_message(MessageKind::ChannelState, channel_state.as_ref());
 
-        state.set_client_channel(client, channel.id)?;
+        state.set_client_channel(client, channel.id).await?;
 
         err
     }

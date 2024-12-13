@@ -1,4 +1,3 @@
-use crate::state::ServerStateRef;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -16,7 +15,7 @@ pub struct Deaf {
 
 // #[actix_web::post("/deaf")]
 pub async fn post_deaf(State(state): State<AppStateRef>, Json(deaf): Json<Deaf>) -> StatusCode {
-    let client = { state.server.get_client_by_name(deaf.user.as_str()) };
+    let client = state.server.get_client_by_name(deaf.user.as_str()).await;
 
     match client {
         Some(client) => {
@@ -31,7 +30,7 @@ pub async fn post_deaf(State(state): State<AppStateRef>, Json(deaf): Json<Deaf>)
 // #[actix_web::get("/deaf/{user}")]
 pub async fn get_deaf(Path(username): Path<String>, State(state): State<AppStateRef>) -> Result<Json<Deaf>, StatusCode> {
     println!("??");
-    if let Some(client) = state.server.get_client_by_name(username.as_str()) {
+    if let Some(client) = state.server.get_client_by_name(username.as_str()).await {
         let deaf = Deaf {
             deaf: client.is_deaf(),
             user: username,

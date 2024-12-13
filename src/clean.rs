@@ -23,7 +23,7 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
     let mut clients_to_reset_crypt = Vec::new();
 
     {
-        let mut iter = state.clients.first_entry();
+        let mut iter = state.clients.first_entry_async().await;
         while let Some(client) = iter {
             // if we can reset our crypt state, we should block resets if we hare being removed or
             // if the publisher is closed
@@ -50,7 +50,7 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
                 }
             }
 
-            iter = client.next();
+            iter = client.next_async().await;
         }
     }
 

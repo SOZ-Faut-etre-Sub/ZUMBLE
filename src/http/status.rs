@@ -1,4 +1,3 @@
-use crate::state::ServerStateRef;
 use axum::extract::State;
 use axum::Json;
 use serde::{Deserialize, Serialize};
@@ -35,7 +34,7 @@ pub async fn get_status(State(state): State<AppStateRef>) -> Json<HashMap<u32, M
     while let Some(client) = iter {
         let session = client.session_id;
         let channel_id = { client.channel_id.load(Ordering::Relaxed) };
-        let channel = { state.server.channels.get(&channel_id) };
+        let channel = state.server.channels.get_async(&channel_id).await;
         let channel_name = {
             if let Some(channel) = channel {
                 Some(channel.name.clone())
@@ -67,11 +66,11 @@ pub async fn get_status(State(state): State<AppStateRef>) -> Json<HashMap<u32, M
                 let mut sessions = HashSet::new();
                 let mut channels = HashSet::new();
 
-                target.sessions.scan(|v| {
+                target.sessions.scan(|v, _| {
                     sessions.insert(*v);
                 });
 
-                target.channels.scan(|v| {
+                target.channels.scan(|v, _| {
                     channels.insert(*v);
                 });
 
