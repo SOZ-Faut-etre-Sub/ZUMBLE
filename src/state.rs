@@ -394,7 +394,9 @@ impl ServerState {
 
             // close the writer instantly so even if there's any References to client still, we will
             // still remove the socket as soon as we can.
-            let _ = client.write.lock().await.shutdown().await;
+            {
+                let _ = client.write.lock().await.shutdown().await;
+            }
 
             let socket = client.udp_socket_addr.swap(None);
             // let mut should_remove = false;
