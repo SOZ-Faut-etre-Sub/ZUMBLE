@@ -88,13 +88,9 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[tokio::main(flavor="current_thread")]
 async fn main() {
     // let console_layer = console_subscriber::spawn();
-    tracing_subscriber::registry()
-        // .with(console_layer)
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    tracing_subscriber::fmt::init();
 
     let args = Args::parse();
-
 
     let config = Arc::new(generate_rustls_cert());
 
@@ -142,10 +138,19 @@ async fn main() {
 
     let tcp_addr: SocketAddr = args.listen.parse().expect("Got invalid data for 'listen', it was not a usable ip");
 
+
+    let tcp_listener = TcpListener::bind(tcp_addr).await.expect("failed to bind to tcp address");
     let tcp_state = state.clone();
     // Create tcp server
     set.spawn(async move {
-        create_tcp_server(tcp_addr, acceptor, server_version, tcp_state).await;
+        match create_tcp_server(tcp_listener, acceptor, server_version, tcp_state).await {
+            Ok(o) => (),
+            Err(e) => {
+                for i in 0..100 {
+                    tracing::error!("TCP SERVER DIED PLZ HELP!")
+                }
+            }
+        }
     });
 
     let http_server = create_http_server(state.clone(), args.http_user, args.http_password);

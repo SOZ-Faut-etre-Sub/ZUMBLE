@@ -18,16 +18,21 @@ use tokio::sync::mpsc::Receiver;
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
 
 pub async fn create_tcp_server(
-    tcp_listener: SocketAddr,
+    tcp_listener: TcpListener,
     acceptor: TlsAcceptor,
     server_version: Version,
     state: ServerStateRef,
 ) -> anyhow::Result<()> {
     let tls_acceptor = acceptor.clone();
-    let incoming = TcpListener::bind(tcp_listener).await.expect("Failed to create TCP listener");
 
     loop {
-        let (mut tcp_stream, _remote_addr) = incoming.accept().await?;
+        let (mut tcp_stream, _remote_addr) = match tcp_listener.accept().await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("{}", e);
+                continue;
+            }
+        };
         let tls_acceptor = tls_acceptor.clone();
 
         let server_version = server_version.clone();
