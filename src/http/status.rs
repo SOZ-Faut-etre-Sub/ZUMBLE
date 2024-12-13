@@ -46,7 +46,7 @@ pub async fn get_status(State(state): State<AppStateRef>) -> Json<HashMap<u32, M
 
         {
             let (good, late, lost, resync, last_good) = {
-                let crypt = client.crypt_state.lock();
+                let crypt = client.crypt_state.lock().await;
                 (crypt.good, crypt.late, crypt.lost, crypt.resync, crypt.last_good)
             };
 

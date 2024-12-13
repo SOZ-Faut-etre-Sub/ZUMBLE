@@ -42,13 +42,13 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
                 clients_to_remove.push(client.session_id);
             }
 
-            // if can_reset_crypt {
-            let last_good = { client.crypt_state.lock().last_good };
+            if can_reset_crypt {
+                let last_good = { client.crypt_state.lock().await.last_good };
 
-            if now.duration_since(last_good).as_millis() > 8000 {
-                clients_to_reset_crypt.push(Arc::clone(client.get()))
+                if now.duration_since(last_good).as_millis() > 8000 {
+                    clients_to_reset_crypt.push(Arc::clone(client.get()))
+                }
             }
-            // }
 
             iter = client.next();
         }

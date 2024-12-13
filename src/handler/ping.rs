@@ -16,7 +16,7 @@ impl Handler for Ping {
         }
 
         {
-            let crypt_state_read = client.crypt_state.lock();
+            let crypt_state_read = client.crypt_state.lock().await;
             ping.set_good(crypt_state_read.good);
             ping.set_late(crypt_state_read.late);
             ping.set_lost(crypt_state_read.lost);

@@ -43,7 +43,7 @@ tokio-util = "0.7.13"
 tikv-jemallocator = "0.5"
 
 [profile.release]
-# codegen-units = 1
+codegen-units = 1
 lto = true
 #debug = 1
 panic = "abort"
