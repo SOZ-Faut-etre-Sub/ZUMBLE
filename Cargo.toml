@@ -38,9 +38,6 @@ axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 axum-auth = "0.7.0"
 tokio-util = "0.7.13"
 
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.5"
-
 [profile.release]
 codegen-units = 1
 lto = true
