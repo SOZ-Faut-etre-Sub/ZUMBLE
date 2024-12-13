@@ -65,7 +65,7 @@ pub struct ServerState {
     pub clients_by_socket: HashMap<SocketAddr, ClientRef>,
     // pub clients_by_peer: HashMap<IpAddr, AtomicU32>,
     pub channels: HashMap<u32, ChannelRef>,
-    pub codec_state: Arc<RwLock<CodecState>>,
+    pub codec_state: Arc<CodecState>,
     pub socket: Arc<UdpSocket>,
     pub logs: HashCache<SocketAddr, ()>,
     session_count: AtomicU32,
@@ -86,7 +86,7 @@ impl ServerState {
             clients_by_socket: HashMap::with_capacity(MAX_CLIENTS),
             // clients_by_peer: HashMap::with_capacity(MAX_CLIENTS),
             channels,
-            codec_state: Arc::new(RwLock::new(CodecState::default())),
+            codec_state: Arc::new(CodecState::default()),
             socket,
             session_count: AtomicU32::new(1),
             channel_count: AtomicU32::new(1),
@@ -259,54 +259,6 @@ impl ServerState {
         None
     }
 
-    // TODO: Check what this does or if this is even needed (we should always use opus)
-    pub async fn check_codec(&self) -> Result<Option<CodecVersion>, MumbleError> {
-        let current_version = { self.codec_state.read().await.get_version() };
-        let mut new_version = current_version;
-        let mut versions = std::collections::HashMap::new();
-
-        self.clients.scan(|_, client| {
-            for version in &client.codecs {
-                *versions.entry(*version).or_insert(0) += 1;
-            }
-        });
-
-        let mut max = 0;
-
-        for (version, count) in versions {
-            if count > max {
-                new_version = version;
-                max = count;
-            }
-        }
-
-        if new_version == current_version {
-            return Ok(Some(self.codec_state.read().await.get_codec_version()));
-        }
-
-        let codec_version = {
-            let mut codec_state = self.codec_state.write().await;
-            codec_state.prefer_alpha = !codec_state.prefer_alpha;
-
-            if codec_state.prefer_alpha {
-                codec_state.alpha = new_version;
-            } else {
-                codec_state.beta = new_version;
-            }
-
-            codec_state.get_codec_version()
-        };
-
-        match self.broadcast_message(MessageKind::CodecVersion, &codec_version) {
-            Ok(_) => (),
-            Err(e) => {
-                tracing::error!("failed to broadcast codec version: {:?}", e);
-            }
-        }
-
-        Ok(None)
-    }
-
     pub fn get_client_by_socket(&self, socket_addr: &SocketAddr) -> Option<ClientRef> {
         self.clients_by_socket.get(socket_addr).map(|client| Arc::clone(client.get()))
     }
@@ -319,40 +271,39 @@ impl ServerState {
         &self,
         bytes: &mut BytesMut,
         addr: SocketAddr,
-    ) -> Result<(Option<ClientRef>, Option<VoicePacket<ServerBound>>), MumbleError> {
-        let mut client = None;
-        let mut packet: Option<VoicePacket<ServerBound>> = None;
+    ) -> Result<Option<(ClientRef, VoicePacket<ServerBound>)>, MumbleError> {
 
-        self.clients_without_udp.scan(|_, c| {
-            // we don't have a way to early return out of a scan so if we *have* a client we should
-            // just continue and not try to decrypt
-            if client.is_some() {
-                return;
-            }
+        let mut client_and_packet = None;
 
+        let mut iter = self.clients_without_udp.first_entry_async().await;
+
+        while let Some(client) = iter {
+            let c = client.get();
             let mut try_buf = bytes.clone();
             let decrypt_result = {
-                let mut crypt_state = c.crypt_state.lock();
+                let mut crypt_state = client.crypt_state.lock().await;
                 crypt_state.decrypt(&mut try_buf)
             };
 
             match decrypt_result {
                 Ok(p) => {
                     self.set_client_socket(c, addr);
-                    client = Some(Arc::clone(c));
-                    packet = Some(p);
+                    client_and_packet = Some((Arc::clone(c), p));
+                    break;
                 }
                 Err(err) => {
                     tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
                 }
             }
-        });
 
-        if let Some(ref client) = client {
+            iter = client.next_async().await;
+        }
+
+        if let Some((client, _)) = &client_and_packet {
             self.clients_without_udp.remove(&client.session_id);
         }
 
-        Ok((client, packet))
+        Ok(client_and_packet)
     }
 
     /// NOTE: This shouldn't be called in an iterator for `client_by_socket` or else it will cause

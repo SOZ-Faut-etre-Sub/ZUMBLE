@@ -10,8 +10,8 @@ use crate::voice::{encode_voice_packet, ClientBound, VoicePacket};
 use arc_swap::ArcSwapOption;
 use bytes::BytesMut;
 use crossbeam::atomic::AtomicCell;
-use parking_lot::Mutex;
 use protobuf::Message;
+use tokio::sync::Mutex;
 use std::fmt::Display;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -36,7 +36,7 @@ pub struct Client {
     pub channel_id: AtomicU32,
     pub mute: AtomicBool,
     pub deaf: AtomicBool,
-    pub write: tokio::sync::Mutex<WriteHalf<TlsStream<TcpStream>>>,
+    pub write: Mutex<WriteHalf<TlsStream<TcpStream>>>,
     // pub tokens: Vec<String>,
     pub crypt_state: Mutex<CryptState>,
     pub udp_socket_addr: ArcSwapOption<SocketAddr>,
@@ -73,6 +73,7 @@ impl Client {
         // Send crypt setup
         send_message(MessageKind::CryptSetup, &crypt_setup, stream).await?;
 
+
         Ok((version, authenticate, crypt))
     }
 
@@ -97,7 +98,7 @@ impl Client {
             name: Arc::new(authenticate.get_username().to_string()),
             channel_id: AtomicU32::new(channel_id),
             crypt_state: Mutex::new(crypt_state),
-            write: tokio::sync::Mutex::new(write),
+            write: Mutex::new(write),
             // tokens,
             deaf: AtomicBool::new(false),
             mute: AtomicBool::new(false),
@@ -181,7 +182,7 @@ impl Client {
     // the server nonce for unless the clients request a resync
     pub async fn send_crypt_setup(&self, reset: bool) -> Result<(), MumbleError> {
         let crypt_setup = {
-            let mut crypt = self.crypt_state.lock();
+            let mut crypt = self.crypt_state.lock().await;
             if reset {
                 crypt.reset();
             }
@@ -233,8 +234,8 @@ impl Client {
 
     pub async fn send_server_config(&self) -> Result<(), MumbleError> {
         let mut server_config = ServerConfig::default();
-        server_config.set_allow_html(true);
-        server_config.set_message_length(512);
+        server_config.set_allow_html(false);
+        server_config.set_message_length(0);
         server_config.set_image_message_length(0);
 
         self.send_message(MessageKind::ServerConfig, &server_config).await
@@ -245,7 +246,7 @@ impl Client {
             let mut dest = BytesMut::new();
 
             {
-                self.crypt_state.lock().encrypt(&packet, &mut dest);
+                self.crypt_state.lock().await.encrypt(&packet, &mut dest);
             }
 
             let buf = &dest.freeze()[..];

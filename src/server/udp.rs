@@ -101,7 +101,7 @@ async fn handle_packet(
             // Send decrypt packet
 
             let decrypt_result = {
-                let mut crypt_state = client.crypt_state.lock();
+                let mut crypt_state = client.crypt_state.lock().await;
                 crypt_state.decrypt(&mut buffer)
             };
 
@@ -120,7 +120,7 @@ async fn handle_packet(
 
                     let restart_crypt = match err {
                         DecryptError::Late => {
-                            let late = { client.crypt_state.lock().late };
+                            let late = { client.crypt_state.lock().await.late };
 
                             late > 100
                         }
@@ -141,30 +141,27 @@ async fn handle_packet(
             }
         }
         None => {
-            let (client_opt, packet_opt) = state.find_client_with_decrypt(&mut buffer, addr).await?;
+            if let Some((client, packet)) = state.find_client_with_decrypt(&mut buffer, addr).await? {
+                tracing::info!("UPD connected client {} on {}", client, addr);
 
-            match (client_opt, packet_opt) {
-                (Some(client), Some(packet)) => {
-                    tracing::info!("UPD connected client {} on {}", client, addr);
+                (client, packet)
+            } else {
 
-                    (client, packet)
-                }
-                _ => {
-                    // don't log if we've done it recently
-                    // if let Ok(Some((_, _))) = state.logs.put(addr, ()) {
-                    tracing::error!("unknown client from address {}", addr);
-                    // }
 
-                    crate::metrics::UNKNOWN_MESSAGES_TOTAL
-                        .with_label_values(&["udp", "input", "UnknownPackets"])
-                        .inc();
+                // don't log if we've done it recently
+                // if let Ok(Some((_, _))) = state.logs.put(addr, ()) {
+                tracing::error!("unknown client from address {}", addr);
+                // }
 
-                    crate::metrics::UNKNOWN_MESSAGES_BYTES
-                        .with_label_values(&["udp", "input", "UnknownPacket"])
-                        .inc_by(size as u64);
+                crate::metrics::UNKNOWN_MESSAGES_TOTAL
+                    .with_label_values(&["udp", "input", "UnknownPackets"])
+                    .inc();
 
-                    return Ok(());
-                }
+                crate::metrics::UNKNOWN_MESSAGES_BYTES
+                    .with_label_values(&["udp", "input", "UnknownPacket"])
+                    .inc_by(size as u64);
+
+                return Ok(());
             }
         }
     };
@@ -185,7 +182,7 @@ async fn handle_packet(
             let mut dest = BytesMut::new();
 
             {
-                let mut crypt = client.crypt_state.lock();
+                let mut crypt = client.crypt_state.lock().await;
                 crypt.encrypt(&client_packet, &mut dest);
             }
 

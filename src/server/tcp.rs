@@ -126,11 +126,9 @@ pub async fn client_run(
     state: &ServerStateRef,
     client: &ClientRef,
 ) -> Result<(), anyhow::Error> {
-    let codec_version = { state.check_codec().await? };
+    let codec_version = { state.codec_state.get_codec_version() };
 
-    if let Some(codec_version) = codec_version {
-        client.send_message(MessageKind::CodecVersion, &codec_version).await?;
-    }
+    client.send_message(MessageKind::CodecVersion, &codec_version).await?;
 
     {
         client.sync_client_and_channels(state).await.map_err(|e| {
@@ -138,6 +136,7 @@ pub async fn client_run(
 
             e
         })?;
+
         client.send_my_user_state().await?;
         client.send_server_sync().await?;
         client.send_server_config().await?;
