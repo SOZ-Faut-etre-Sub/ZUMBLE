@@ -3,8 +3,6 @@ use crate::handler::Handler;
 use bytes::{BufMut, Bytes, BytesMut};
 use protobuf::Message;
 use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub mod mumble;

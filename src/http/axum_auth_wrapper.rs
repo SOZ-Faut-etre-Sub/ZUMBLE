@@ -6,7 +6,7 @@ use axum::{
 };
 use axum_auth::AuthBasic;
 
-use super::{AppState, AppStateRef, AuthState};
+use super::AppStateRef;
 
 pub async fn auth_basic(
     State(auth_state): State<AppStateRef>,
@@ -19,7 +19,7 @@ pub async fn auth_basic(
     next: Next,
 ) -> Result<Response, StatusCode> {
     if auth_state.auth.password.is_none() {
-        return Err(StatusCode::UNAUTHORIZED)
+        return Err(StatusCode::UNAUTHORIZED);
     }
     if id == auth_state.auth.username && password == auth_state.auth.password {
         let response = next.run(request).await;

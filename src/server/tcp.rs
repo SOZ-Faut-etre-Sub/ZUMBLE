@@ -1,14 +1,14 @@
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::time::Duration;
 
 use crate::client::{Client, ClientRef};
 use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
 use crate::proto::mumble::Version;
-use crate::proto::{expected_message, send_message, MessageKind};
+use crate::proto::MessageKind;
 use crate::server::constants::{MAX_BANDWIDTH_IN_BYTES, MAX_CLIENTS};
 use crate::state::ServerStateRef;
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use futures::TryFutureExt;
 use tokio::io::{self};
 use tokio::io::{AsyncWriteExt, ReadHalf};
@@ -85,9 +85,7 @@ pub async fn create_tcp_server(
         tokio::spawn(async move {
             let (tls_stream, peer_ip) = match handle_accept_tls_stream.await {
                 (Ok(tls_stream), peer_ip) => (tls_stream, peer_ip),
-                (Err(e), _) => {
-                    return Err(e.into())
-                }
+                (Err(e), _) => return Err(e),
             };
 
             handle_new_client(tls_stream, peer_ip, server_version, state).await
@@ -107,7 +105,7 @@ async fn handle_new_client(
     let (tx, rx) = mpsc::channel(MAX_BANDWIDTH_IN_BYTES);
 
     let username = authenticate.get_username().to_string();
-    let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip);
+    let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip).await;
 
     tracing::info!("TCP new client {} connected {}", username, peer_ip);
 
@@ -115,7 +113,7 @@ async fn handle_new_client(
     let client_cl = client.clone();
     match client_run(read, rx, &state_cl, &client_cl).await {
         Ok(_) => (),
-        Err(e) => (),
+        Err(_e) => (),
     }
 
     tracing::info!("client {} disconnected", username);

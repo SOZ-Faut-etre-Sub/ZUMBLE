@@ -17,19 +17,19 @@ impl Handler for UserState {
         client.update(self);
 
         if self.has_channel_id() {
-            state.set_client_channel(client, self.get_channel_id())?;
+            state.set_client_channel(client, self.get_channel_id()).await?;
         }
 
         for channel_id in self.get_listening_channel_add() {
-            if let Some(channel) = state.channels.get(channel_id) {
+            if let Some(channel) = state.channels.get_async(channel_id).await {
                 // if this errors it means our client is already in it, we can just ignore.
-                let _ = channel.listeners.insert(session_id, Arc::clone(client));
+                let _ = channel.listeners.insert_async(session_id, Arc::clone(client)).await;
             }
         }
 
         for channel_id in self.get_listening_channel_remove() {
-            if let Some(channel) = state.channels.get(channel_id) {
-                channel.listeners.remove(&session_id);
+            if let Some(channel) = state.channels.get_async(channel_id).await {
+                channel.listeners.remove_async(&session_id).await;
             }
         }
 

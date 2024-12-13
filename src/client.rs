@@ -11,7 +11,6 @@ use arc_swap::ArcSwapOption;
 use bytes::BytesMut;
 use crossbeam::atomic::AtomicCell;
 use protobuf::Message;
-use tokio::sync::Mutex;
 use std::fmt::Display;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -20,6 +19,7 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_rustls::server::TlsStream;
 

@@ -33,22 +33,19 @@ use crate::proto::mumble::Version;
 use crate::server::{create_tcp_server, create_udp_server};
 use crate::state::ServerState;
 
-
-use tokio_util::sync::CancellationToken;
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use rcgen::{date_time_ymd, CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P384_SHA384};
 use rustls::crypto::{self, CryptoProvider};
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::PrivateKeyDer;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::task::JoinSet;
 use tokio_rustls::rustls::{self};
 use tokio_rustls::TlsAcceptor;
+use tokio_util::sync::CancellationToken;
 
 /// Zumble, a mumble server implementation for FiveM
 #[derive(Parser, Debug)]
@@ -85,7 +82,7 @@ struct Args {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[tokio::main(flavor="current_thread")]
+#[tokio::main]
 async fn main() {
     // let console_layer = console_subscriber::spawn();
     tracing_subscriber::fmt::init();
@@ -97,7 +94,6 @@ async fn main() {
     let http_config = RustlsConfig::from_config(Arc::clone(&config));
 
     let acceptor = TlsAcceptor::from(Arc::clone(&config));
-
 
     // ignore the fact that `0` does nothing here
     #[allow(clippy::identity_op)]
@@ -138,17 +134,14 @@ async fn main() {
 
     let tcp_addr: SocketAddr = args.listen.parse().expect("Got invalid data for 'listen', it was not a usable ip");
 
-
     let tcp_listener = TcpListener::bind(tcp_addr).await.expect("failed to bind to tcp address");
     let tcp_state = state.clone();
     // Create tcp server
     set.spawn(async move {
         match create_tcp_server(tcp_listener, acceptor, server_version, tcp_state).await {
-            Ok(o) => (),
+            Ok(_) => (),
             Err(e) => {
-                for i in 0..100 {
-                    tracing::error!("TCP SERVER DIED PLZ HELP!")
-                }
+                tracing::error!("{}", e);
             }
         }
     });
@@ -164,20 +157,20 @@ async fn main() {
                     .serve(http_server.into_make_service())
                     .await
                     .unwrap();
-                } else {
-                    axum_server::bind(socket_addr).serve(http_server.into_make_service()).await.unwrap();
+            } else {
+                axum_server::bind(socket_addr).serve(http_server.into_make_service()).await.unwrap();
             }
         });
     } else {
         tracing::info!("http server not started, no auth password provided");
     }
 
-    while let Some(res) = set.join_next().await {
+    while let Some(_) = set.join_next().await {
     }
 
 }
 
-fn generate_rustls_cert() -> ServerConfig  {
+fn generate_rustls_cert() -> ServerConfig {
     CryptoProvider::install_default(crypto::ring::default_provider()).expect("failed to install ring crypto provider");
 
     // This doesn't really matter for us as this isn't checked for FiveM

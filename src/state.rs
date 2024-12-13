@@ -16,7 +16,6 @@ use std::sync::Arc;
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
-use tokio::sync::RwLock;
 use tokio_rustls::server::TlsStream;
 
 pub struct CodecState {
@@ -93,14 +92,14 @@ impl ServerState {
         }
     }
 
-    pub fn add_client(
+    pub async fn add_client(
         &self,
         version: Version,
         authenticate: Authenticate,
         crypt_state: CryptState,
         write: WriteHalf<TlsStream<TcpStream>>,
         publisher: Sender<ClientMessage>,
-        peer_ip: IpAddr,
+        _peer_ip: IpAddr,
     ) -> ClientRef {
         let session_id = self.get_free_session_id();
 
@@ -116,19 +115,19 @@ impl ServerState {
         );
 
         crate::metrics::CLIENTS_TOTAL.inc();
-        self.clients.upsert(session_id, Arc::clone(&client));
+        self.clients.upsert_async(session_id, Arc::clone(&client)).await;
         // if let Some(ref_count) = self.clients_by_peer.get(&peer_ip) {
         //     ref_count.fetch_add(1, Ordering::SeqCst);
         // } else {
-        //     self.clients_by_peer.upsert(peer_ip, AtomicU32::new(1));
+        //     self.clients_by_peer.upsert_async(peer_ip, AtomicU32::new(1)).await;
         // }
 
-        self.clients_without_udp.upsert(session_id, Arc::clone(&client));
+        self.clients_without_udp.upsert_async(session_id, Arc::clone(&client)).await;
 
         client
     }
 
-    pub fn add_channel(&self, state: &ChannelState) -> ChannelRef {
+    pub async fn add_channel(&self, state: &ChannelState) -> ChannelRef {
         let channel_id = self.get_free_channel_id();
         let channel = Channel::new(
             channel_id,
@@ -140,13 +139,16 @@ impl ServerState {
 
         tracing::debug!("Created channel {} with name {}", channel_id, state.get_name().to_string());
 
-        self.channels.upsert(channel_id, Arc::clone(&channel));
+        self.channels.upsert_async(channel_id, Arc::clone(&channel)).await;
 
         channel
     }
 
-    pub fn get_client_by_name(&self, name: &str) -> Option<ClientRef> {
-        let client = self.clients.any_entry(|_k, client| client.authenticate.get_username() == name);
+    pub async fn get_client_by_name(&self, name: &str) -> Option<ClientRef> {
+        let client = self
+            .clients
+            .any_entry_async(|_k, client| client.authenticate.get_username() == name)
+            .await;
 
         if let Some(cl) = client {
             return Some(Arc::clone(cl.get()));
@@ -155,13 +157,13 @@ impl ServerState {
         None
     }
 
-    pub fn set_client_socket(&self, client: &ClientRef, addr: SocketAddr) {
+    pub async fn set_client_socket(&self, client: &ClientRef, addr: SocketAddr) {
         let socket_lock = client.udp_socket_addr.swap(Some(Arc::new(addr)));
         if let Some(exiting_addr) = socket_lock {
-            self.clients_by_socket.remove(exiting_addr.as_ref());
+            self.clients_by_socket.remove_async(exiting_addr.as_ref()).await;
         }
 
-        self.clients_by_socket.upsert(addr, Arc::clone(client));
+        self.clients_by_socket.upsert_async(addr, Arc::clone(client)).await;
     }
 
     pub fn broadcast_message<T: Message>(&self, kind: MessageKind, message: &T) -> Result<(), MumbleError> {
@@ -186,14 +188,12 @@ impl ServerState {
         Ok(())
     }
 
-    fn handle_client_left_channel(&self, client_session: u32, leave_channel_id: u32) -> Option<u32> {
-        if let Some(channel) = self.channels.get(&leave_channel_id) {
+    async fn handle_client_left_channel(&self, client_session: u32, leave_channel_id: u32) -> Option<u32> {
+        if let Some(channel) = self.channels.get_async(&leave_channel_id).await {
             // remove the client from the channel
-            channel.clients.remove(&client_session);
+            channel.clients.remove_async(&client_session).await;
 
-            if channel.parent_id.is_none() {
-                return None;
-            };
+            channel.parent_id?;;
 
             // if the channel isn't temporary then we want to keep it
             if !channel.temporary || !channel.get_clients().is_empty() {
@@ -205,7 +205,7 @@ impl ServerState {
         let mut channel_remove = ChannelRemove::new();
         channel_remove.set_channel_id(leave_channel_id);
 
-        self.channels.remove(&leave_channel_id);
+        self.channels.remove_async(&leave_channel_id).await;
 
         match self.broadcast_message(MessageKind::ChannelRemove, &channel_remove) {
             Ok(_) => (),
@@ -215,7 +215,7 @@ impl ServerState {
         Some(leave_channel_id)
     }
 
-    pub fn set_client_channel(&self, client: &ClientRef, channel: u32) -> Result<(), MumbleError> {
+    pub async fn set_client_channel(&self, client: &ClientRef, channel: u32) -> Result<(), MumbleError> {
         let leave_channel_id = client.join_channel(channel);
 
         tracing::info!(
@@ -225,8 +225,8 @@ impl ServerState {
             leave_channel_id
         );
 
-        if let Some(channel) = self.channels.get(&channel) {
-            channel.clients.upsert(client.session_id, Arc::clone(client));
+        if let Some(channel) = self.channels.get_async(&channel).await {
+            channel.clients.upsert_async(client.session_id, Arc::clone(client)).await;
         } else {
             return Err(MumbleError::ChannelDoesntExist);
         }
@@ -243,14 +243,14 @@ impl ServerState {
             if leave_channel_id == channel {
                 return Ok(());
             };
-            self.handle_client_left_channel(client.session_id, leave_channel_id);
+            self.handle_client_left_channel(client.session_id, leave_channel_id).await;
         }
 
         Ok(())
     }
 
-    pub fn get_channel_by_name(&self, name: &str) -> Option<ChannelRef> {
-        let client = self.channels.any_entry(|_k, channel| channel.name == name);
+    pub async fn get_channel_by_name(&self, name: &str) -> Option<ChannelRef> {
+        let client = self.channels.any_entry_async(|_k, channel| channel.name == name).await;
 
         if let Some(cl) = client {
             return Some(Arc::clone(&cl));
@@ -259,12 +259,15 @@ impl ServerState {
         None
     }
 
-    pub fn get_client_by_socket(&self, socket_addr: &SocketAddr) -> Option<ClientRef> {
-        self.clients_by_socket.get(socket_addr).map(|client| Arc::clone(client.get()))
+    pub async fn get_client_by_socket(&self, socket_addr: &SocketAddr) -> Option<ClientRef> {
+        self.clients_by_socket
+            .get_async(socket_addr)
+            .await
+            .map(|client| Arc::clone(client.get()))
     }
 
-    pub fn remove_client_by_socket(&self, socket_addr: &SocketAddr) {
-        self.clients_by_socket.remove(socket_addr);
+    pub async fn remove_client_by_socket(&self, socket_addr: &SocketAddr) {
+        self.clients_by_socket.remove_async(socket_addr).await;
     }
 
     pub async fn find_client_with_decrypt(
@@ -272,7 +275,6 @@ impl ServerState {
         bytes: &mut BytesMut,
         addr: SocketAddr,
     ) -> Result<Option<(ClientRef, VoicePacket<ServerBound>)>, MumbleError> {
-
         let mut client_and_packet = None;
 
         let mut iter = self.clients_without_udp.first_entry_async().await;
@@ -287,7 +289,7 @@ impl ServerState {
 
             match decrypt_result {
                 Ok(p) => {
-                    self.set_client_socket(c, addr);
+                    self.set_client_socket(c, addr).await;
                     client_and_packet = Some((Arc::clone(c), p));
                     break;
                 }
@@ -300,7 +302,7 @@ impl ServerState {
         }
 
         if let Some((client, _)) = &client_and_packet {
-            self.clients_without_udp.remove(&client.session_id);
+            self.clients_without_udp.remove_async(&client.session_id).await;
         }
 
         Ok(client_and_packet)
@@ -312,14 +314,14 @@ impl ServerState {
     /// Resets the clients crypt state and removes their udp socket so we no longer take invalid
     /// data from the UDP stream
     pub async fn reset_client_crypt(&self, client: &ClientRef) -> Result<(), MumbleError> {
-        self.clients_without_udp.upsert(client.session_id, Arc::clone(client));
+        self.clients_without_udp.upsert_async(client.session_id, Arc::clone(client)).await;
 
         // swap out the clients socket with none so we don't try to reuse the old socket
         let address_option = client.remove_udp_socket();
 
         if let Some(address) = address_option {
             // remove the socket
-            self.remove_client_by_socket(&address);
+            self.remove_client_by_socket(&address).await;
         }
 
         client.send_crypt_setup(true).await
@@ -328,13 +330,15 @@ impl ServerState {
     pub async fn disconnect(&self, client_session: u32) {
         crate::metrics::CLIENTS_TOTAL.dec();
 
-        let client = self.clients.remove(&client_session);
-        self.clients_without_udp.remove(&client_session);
+        let client = self.clients.remove_async(&client_session).await;
+        self.clients_without_udp.remove_async(&client_session).await;
 
         // if the client was listening to any channels we want to remove them
-        self.channels.scan(|_, channel| {
-            channel.listeners.retain(|session_id, _| *session_id != client_session);
-        });
+        self.channels
+            .scan_async(|_, channel| {
+                channel.listeners.retain(|session_id, _| *session_id != client_session);
+            })
+            .await;
 
         if let Some((_, client)) = client {
             tracing::info!("Removing client {}", client);
@@ -353,7 +357,7 @@ impl ServerState {
             // let mut should_remove = false;
 
             if let Some(socket_addr) = socket {
-                self.remove_client_by_socket(&socket_addr);
+                self.remove_client_by_socket(&socket_addr).await;
                 // if let Some(ref_count) = self.clients_by_peer.get(&socket_addr.ip()) {
                 //     let count = ref_count.fetch_sub(1, Ordering::SeqCst);
                 //     // if our last count was 0 that means our new count will be 0, we should remove them from the map
@@ -367,18 +371,18 @@ impl ServerState {
 
             let channel_id = client.channel_id.load(Ordering::Relaxed);
 
-            self.broadcast_client_delete(client_session, channel_id);
+            self.broadcast_client_delete(client_session, channel_id).await;
         }
     }
 
-    fn broadcast_client_delete(&self, client_id: u32, channel_id: u32) {
+    async fn broadcast_client_delete(&self, client_id: u32, channel_id: u32) {
         let mut remove = UserRemove::new();
         remove.set_session(client_id);
         remove.set_reason("disconnected".to_string());
 
         let _ = self.broadcast_message(MessageKind::UserRemove, &remove);
 
-        self.handle_client_left_channel(client_id, channel_id);
+        self.handle_client_left_channel(client_id, channel_id).await;
     }
 
     // TODO: this can still wrap and overwrite existing sessions, though its very unlikely

@@ -7,11 +7,11 @@ use anyhow::anyhow;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
-use tokio_util::sync::CancellationToken;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
+use tokio_util::sync::CancellationToken;
 
 use super::constants::{MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
 
@@ -94,7 +94,7 @@ async fn handle_packet(
     //     return Err(anyhow!("Not a valid peer"));
     // }
 
-    let client_opt = state.get_client_by_socket(&addr);
+    let client_opt = state.get_client_by_socket(&addr).await;
 
     let (client, packet) = match client_opt {
         Some(client) => {
@@ -146,8 +146,6 @@ async fn handle_packet(
 
                 (client, packet)
             } else {
-
-
                 // don't log if we've done it recently
                 // if let Ok(Some((_, _))) = state.logs.put(addr, ()) {
                 tracing::error!("unknown client from address {}", addr);
