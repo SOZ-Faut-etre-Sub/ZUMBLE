@@ -1,3 +1,12 @@
+use rustls::ServerConfig;
+
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 #[macro_use]
 extern crate lazy_static;
 
@@ -24,6 +33,8 @@ use crate::proto::mumble::Version;
 use crate::server::{create_tcp_server, create_udp_server};
 use crate::state::ServerState;
 
+
+use tokio_util::sync::CancellationToken;
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use rcgen::{date_time_ymd, CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P384_SHA384};
@@ -74,52 +85,26 @@ struct Args {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[tokio::main]
+#[tokio::main(flavor="current_thread")]
 async fn main() {
-    let console_layer = console_subscriber::spawn();
+    // let console_layer = console_subscriber::spawn();
     tracing_subscriber::registry()
-        .with(console_layer)
+        // .with(console_layer)
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     let args = Args::parse();
 
-    // This doesn't really matter for us as this isn't checked for FiveM
-    let cert = vec!["localhost".to_string()];
 
-    CryptoProvider::install_default(crypto::ring::default_provider()).expect("failed to install ring crypto provider");
-
-    // TODO: Maybe store this? not really entirely that useful but who knows.
-    let generate_key = KeyPair::generate_for(&PKCS_ECDSA_P384_SHA384);
-    let key_pair = generate_key.unwrap();
-
-    let mut cert = CertificateParams::new(cert).expect("Unable to generate certificate");
-    // we need to change our time to be something sensible, botan will freak out if this is greater
-    // than 2200 (by default it gens to 4096)
-    cert.not_after = date_time_ymd(2100, 1, 1);
-
-    let mut distinguished_name = DistinguishedName::new();
-    distinguished_name.push(DnType::CommonName, "Mumble self signed cert");
-    cert.distinguished_name = distinguished_name;
-
-    let cert = cert.self_signed(&key_pair).unwrap();
-
-    let pem = key_pair.serialize_pem();
-
-    let key_der = PrivateKeyDer::from_pem_slice(pem.as_bytes()).expect("Couldn't make key_der");
-
-    let config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert.der().clone()], key_der)
-        .expect("Unable to create tlsconfig");
-
-    let config = Arc::new(config);
+    let config = Arc::new(generate_rustls_cert());
 
     let http_config = RustlsConfig::from_config(Arc::clone(&config));
 
     let acceptor = TlsAcceptor::from(Arc::clone(&config));
 
 
+    // ignore the fact that `0` does nothing here
+    #[allow(clippy::identity_op)]
     // Simulate 1.4.0 protocol version
     let version = 1 << 16 | 4 << 8 | 0;
 
@@ -143,8 +128,10 @@ async fn main() {
 
     tracing::info!("tcp/udp server start listening on {}", args.listen);
 
+    let cancelation_token = CancellationToken::new();
+
     set.spawn(async move {
-        create_udp_server(version, udp_socket, udp_state).await;
+        create_udp_server(version, udp_socket, udp_state, cancelation_token.clone()).await;
     });
 
     let clean_state = state.clone();
@@ -180,6 +167,38 @@ async fn main() {
         tracing::info!("http server not started, no auth password provided");
     }
 
-    while let Some(res) = set.join_next().await {}
+    while let Some(res) = set.join_next().await {
+    }
 
+}
+
+fn generate_rustls_cert() -> ServerConfig  {
+    CryptoProvider::install_default(crypto::ring::default_provider()).expect("failed to install ring crypto provider");
+
+    // This doesn't really matter for us as this isn't checked for FiveM
+    let cert = vec!["localhost".to_string()];
+
+    // TODO: Maybe store this? not really entirely that useful but who knows.
+    let generate_key = KeyPair::generate_for(&PKCS_ECDSA_P384_SHA384);
+    let key_pair = generate_key.unwrap();
+
+    let mut cert = CertificateParams::new(cert).expect("Unable to generate certificate");
+    // we need to change our time to be something sensible, botan will freak out if this is greater
+    // than 2200 (by default it gens to 4096)
+    cert.not_after = date_time_ymd(2100, 1, 1);
+
+    let mut distinguished_name = DistinguishedName::new();
+    distinguished_name.push(DnType::CommonName, "Mumble self signed cert");
+    cert.distinguished_name = distinguished_name;
+
+    let cert = cert.self_signed(&key_pair).unwrap();
+
+    let pem = key_pair.serialize_pem();
+
+    let key_der = PrivateKeyDer::from_pem_slice(pem.as_bytes()).expect("Couldn't make key_der");
+
+    rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert.der().clone()], key_der)
+        .expect("Unable to create tlsconfig")
 }

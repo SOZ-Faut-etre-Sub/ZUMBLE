@@ -7,6 +7,7 @@ use anyhow::anyhow;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
+use tokio_util::sync::CancellationToken;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use tokio::net::UdpSocket;
 
 use super::constants::{MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
 
-pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef) {
+pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef, cancel_token: CancellationToken) {
     loop {
         match udp_server_run(protocol_version, socket.clone(), state.clone()).await {
             Ok(_) => (),
