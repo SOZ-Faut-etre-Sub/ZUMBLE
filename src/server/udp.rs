@@ -1,4 +1,4 @@
-use crate::error::DecryptError;
+use crate::{error::DecryptError, varint::ReadExt};
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
 use crate::voice::VoicePacket;
@@ -10,6 +10,7 @@ use bytes::BytesMut;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio_util::sync::CancellationToken;
 
@@ -52,11 +53,13 @@ async fn handle_packet(
         return Err(anyhow!("Invalid packet"));
     }
     let mut cursor = Cursor::new(&buffer[..size]);
-    let kind = cursor.read_u32::<byteorder::LittleEndian>()?;
+    let kind = cursor.read_u8()?;
+
+    let kind = (kind >> 5) & 0x7;
 
     // respond to the server list ping packet
-    if size == 12 && kind == 0 {
-        let timestamp = cursor.read_u64::<byteorder::LittleEndian>()?;
+    if kind == 0 && size == 12 {
+        let timestamp = cursor.read_varint()?;
 
         // TODO: actually read version and follow the mumble spec for using UDP protobufs here
         let mut send = Cursor::new(vec![0u8; 24]);
@@ -184,6 +187,8 @@ async fn handle_packet(
                 crypt.encrypt(&client_packet, &mut dest);
             }
 
+
+            client.last_udp_ping.store(Instant::now());
             let buf = &dest.freeze()[..];
 
             match socket.send_to(buf, addr).await {
@@ -209,6 +214,7 @@ async fn handle_packet(
             crate::metrics::MESSAGES_BYTES
                 .with_label_values(&["udp", "input", "VoicePacket"])
                 .inc_by(size as u64);
+
 
             let send_client_packet = { client.publisher.try_send(ClientMessage::RouteVoicePacket(client_packet)) };
 

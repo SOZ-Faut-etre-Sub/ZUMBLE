@@ -45,7 +45,8 @@ pub struct Client {
     pub udp_socket: Arc<UdpSocket>,
     pub publisher: Sender<ClientMessage>,
     pub targets: VoiceTargetArray,
-    pub last_ping: AtomicCell<Instant>,
+    pub last_tcp_ping: AtomicCell<Instant>,
+    pub last_udp_ping: AtomicCell<Instant>,
 }
 
 impl Display for Client {
@@ -109,7 +110,8 @@ impl Client {
             udp_socket,
             publisher,
             targets,
-            last_ping: AtomicCell::new(Instant::now()),
+            last_tcp_ping: AtomicCell::new(Instant::now()),
+            last_udp_ping: AtomicCell::new(Instant::now()),
         })
     }
 

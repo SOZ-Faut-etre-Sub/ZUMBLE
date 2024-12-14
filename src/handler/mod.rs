@@ -10,6 +10,9 @@ mod voice_target;
 
 // use anyhow::anyhow;
 
+use std::sync::Arc;
+use anyhow::anyhow;
+
 use crate::client::ClientRef;
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
@@ -22,9 +25,12 @@ use bytes::BytesMut;
 use protobuf::Message;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::sync::mpsc::Receiver;
+use tokio::task::JoinSet;
+
+type MumbleResult = anyhow::Result<()>;
 
 pub trait Handler {
-    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError>;
+    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> MumbleResult;
 }
 
 pub struct MessageHandler;
@@ -39,15 +45,21 @@ impl MessageHandler {
         Ok(())
     }
 
-    pub async fn handle<S: AsyncRead + Unpin>(
-        stream: &mut S,
-        consumer: &mut Receiver<ClientMessage>,
-        state: &ServerStateRef,
-        client: &ClientRef,
-    ) -> Result<(), anyhow::Error> {
-        tokio::select! {
-            kind_read = stream.read_u16() => {
-                let kind = kind_read?;
+    pub async fn handle<S: AsyncRead + Unpin + Send + 'static>(
+        mut stream: S,
+        mut consumer: Receiver<ClientMessage>,
+        server_state: &ServerStateRef,
+        client_ref: &ClientRef,
+    ) -> JoinSet<Result<(), anyhow::Error>> {
+        let mut join_set = JoinSet::new();
+
+        let state = Arc::clone(server_state);
+        let client = Arc::clone(client_ref);
+        join_set.spawn(async move {
+            let state = &state;
+            let client = &client;
+            loop {
+                let kind = stream.read_u16().await?;
                 let size = stream.read_u32().await?;
                 // We'll just log this for now
                 // if size > 1024 {
@@ -59,61 +71,92 @@ impl MessageHandler {
                 let message_kind = MessageKind::try_from(kind)?;
 
                 if size > 1024 {
-                    tracing::warn!("{} is reading a packet that is very large, got size {}, max expected 1024! MessageKind: {message_kind}", client, size);
+                    tracing::warn!(
+                        "{} is reading a packet that is very large, got size {}, max expected 1024! MessageKind: {message_kind} {:?}",
+                        client,
+                        size,
+                        buf
+                    );
                 }
 
-                crate::metrics::MESSAGES_TOTAL.with_label_values(&["tcp", "input", message_kind.to_string().as_str()]).inc();
-                crate::metrics::MESSAGES_BYTES.with_label_values(&["tcp", "input", message_kind.to_string().as_str()]).inc_by(buf.len() as u64);
+                crate::metrics::MESSAGES_TOTAL
+                    .with_label_values(&["tcp", "input", message_kind.to_string().as_str()])
+                    .inc();
+                crate::metrics::MESSAGES_BYTES
+                    .with_label_values(&["tcp", "input", message_kind.to_string().as_str()])
+                    .inc_by(buf.len() as u64);
 
-                match message_kind {
-                    MessageKind::Version => Self::try_handle::<mumble::Version>(&buf, state, client).await.context("kind: Version"),
+                let res = match message_kind {
+                    MessageKind::Version => Self::try_handle::<mumble::Version>(&buf, state, client)
+                        .await
+                        .context("kind: Version"),
                     MessageKind::UDPTunnel => {
                         let voice_packet = match decode_voice_packet::<ServerBound>(&mut buf) {
                             Ok(voice_packet) => voice_packet,
                             Err(e) => {
                                 tracing::error!("error decoding voice packet: {}", e);
-
-                                return Ok(());
+                                continue;
                             }
                         };
 
-                        let output_voice_packet = { voice_packet.into_client_bound(client.session_id) };
+                        let output_voice_packet = voice_packet.into_client_bound(client.session_id);
 
                         output_voice_packet.handle(state, client).await.context("kind: UDPTunnel")
-                    }
-                    MessageKind::Authenticate => Self::try_handle::<mumble::Authenticate>(&buf, state, client).await.context("kind: Authenticate"),
+                    },
+                    MessageKind::Authenticate => Self::try_handle::<mumble::Authenticate>(&buf, state, client)
+                        .await
+                        .context("kind: Authenticate"),
                     MessageKind::Ping => Self::try_handle::<mumble::Ping>(&buf, state, client).await.context("kind: Ping =>"),
-                    MessageKind::ChannelState => Self::try_handle::<mumble::ChannelState>(&buf, state, client).await.context("kind: ChannelState"),
-                    MessageKind::CryptSetup => Self::try_handle::<mumble::CryptSetup>(&buf, state, client).await.context("kind: CryptSetup"),
-                    MessageKind::PermissionQuery => Self::try_handle::<mumble::PermissionQuery>(&buf, state, client).await.context("kind: PermissionQuery"),
-                    MessageKind::UserState => Self::try_handle::<mumble::UserState>(&buf, state, client).await.context("kind: UserState"),
-                    MessageKind::VoiceTarget => Self::try_handle::<mumble::VoiceTarget>(&buf, state, client).await.context("kind: VoiceTarget"),
+                    MessageKind::ChannelState => Self::try_handle::<mumble::ChannelState>(&buf, state, client)
+                        .await
+                        .context("kind: ChannelState"),
+                    MessageKind::CryptSetup => Self::try_handle::<mumble::CryptSetup>(&buf, state, client)
+                        .await
+                        .context("kind: CryptSetup"),
+                    MessageKind::PermissionQuery => Self::try_handle::<mumble::PermissionQuery>(&buf, state, client)
+                        .await
+                        .context("kind: PermissionQuery"),
+                    MessageKind::UserState => Self::try_handle::<mumble::UserState>(&buf, state, client)
+                        .await
+                        .context("kind: UserState"),
+                    MessageKind::VoiceTarget => Self::try_handle::<mumble::VoiceTarget>(&buf, state, client)
+                        .await
+                        .context("kind: VoiceTarget"),
                     _ => {
                         tracing::warn!("unsupported message kind: {:?}", message_kind);
+                        Err(anyhow!("Unsupported message kind: {}", message_kind))
+                    }
+                };
+            }
+        });
 
-                        Ok(())
-                    }
+        let state = Arc::clone(server_state);
+        let client = Arc::clone(client_ref);
+        join_set.spawn(async move {
+            let state = &state;
+            let client = &client;
+            loop {
+                if consumer.is_closed() { 
+                    return Err(anyhow!("UDP consumer lost"))
                 }
-            },
-            consume = consumer.recv() => {
-                match consume {
-                    Some(ClientMessage::RouteVoicePacket(packet)) => {
-                        packet.handle(state, client).await.context("handle voice packet")
-                    },
-                    Some(ClientMessage::SendVoicePacket(packet)) => {
-                        client.send_voice_packet(packet).await.context("send voice packet")
-                    },
-                    Some(ClientMessage::SendMessage { kind, payload }) => {
-                        client.send(payload.as_ref()).await.context(format!("send message of type: {}", kind))
-                    },
+                let err = match consumer.recv().await {
+                    Some(ClientMessage::RouteVoicePacket(packet)) => packet.handle(state, client).await,
+                    Some(ClientMessage::SendVoicePacket(packet)) => client.send_voice_packet(packet).await.map_err(anyhow::Error::new),
+                    Some(ClientMessage::SendMessage { kind, payload }) => client
+                        .send(payload.as_ref())
+                        .await.map_err(anyhow::Error::new),
                     Some(ClientMessage::Disconnect) => {
-                        Err(MumbleError::ForceDisconnect).context("force disconnect")
+                        return Err(MumbleError::ForceDisconnect).context("force disconnect")
                     },
-                    _ => {
-                        Ok(())
-                    }
+                    _ => Ok(()),
+                };
+
+                if let Err(e) = err {
+                    tracing::error!("UDP call failed with: {}", e);
                 }
-            },
-        }
+            }
+        });
+
+        join_set
     }
 }

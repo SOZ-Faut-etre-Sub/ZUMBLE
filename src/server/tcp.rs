@@ -154,23 +154,13 @@ pub async fn client_run(
         }
     }
 
-    loop {
-        match MessageHandler::handle(&mut read, &mut receiver, state, client).await {
-            Ok(_) => (),
-            Err(e) => {
-                if e.is::<io::Error>() {
-                    let ioerr = e.downcast::<io::Error>().unwrap();
+    let mut res = MessageHandler::handle(read, receiver, state, client).await;
 
-                    // avoid error for client disconnect
-                    if ioerr.kind() == io::ErrorKind::UnexpectedEof {
-                        return Ok(());
-                    }
-
-                    return Err(ioerr.into());
-                }
-
-                return Err(e);
-            }
-        }
+    if let Some(e) = res.join_next().await {
+        // if one of the tasks fails, we should drop the other (i.e. whenever we manually
+        // disconnect this will kill the client)
+        res.shutdown().await;
     }
+
+    Ok(())
 }
