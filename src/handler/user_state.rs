@@ -6,8 +6,10 @@ use crate::handler::Handler;
 use crate::proto::mumble::UserState;
 use crate::state::ServerStateRef;
 
+use super::MumbleResult;
+
 impl Handler for UserState {
-    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError> {
+    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> MumbleResult {
         let session_id = { client.session_id };
 
         if self.get_session() != session_id {

@@ -1,17 +1,16 @@
 use scc::HashMap;
 
 use crate::client::ClientRef;
-use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
 use crate::voice::{ClientBound, VoicePacket};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use super::Handler;
+use super::{Handler, MumbleResult};
 
 impl Handler for VoicePacket<ClientBound> {
-    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError> {
+    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> MumbleResult {
         let mute = client.is_muted();
 
         if mute {

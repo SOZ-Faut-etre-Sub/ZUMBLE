@@ -35,10 +35,18 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
 
             let now = Instant::now();
 
-            let duration = now.duration_since(client.last_ping.load());
+            let since_last_udp = now.duration_since(client.last_udp_ping.load());
 
-            if duration.as_secs() > 30 {
+            if since_last_udp.as_secs() > 30 {
                 can_reset_crypt = false;
+                clients_to_remove.push(client.session_id);
+            }
+
+            let since_last_tcp = now.duration_since(client.last_tcp_ping.load());
+
+            // if we haven't gotten a tcp ping in 10 seconds (which means they missed 2 mumble
+            // pings, or 10 for FiveM) we should be safe to drop the client early.
+            if since_last_tcp.as_secs() > 10 {
                 clients_to_remove.push(client.session_id);
             }
 
@@ -63,9 +71,11 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
         }
     }
 
-    for session_id in clients_to_remove {
-        state.disconnect(session_id).await;
-    }
+    let futures = clients_to_remove
+        .iter()
+        .map(|session_id| state.disconnect(*session_id));
+
+    futures_util::future::join_all(futures).await;
 
     Ok(())
 }

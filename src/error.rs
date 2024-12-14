@@ -22,6 +22,9 @@ pub enum MumbleError {
     ChannelDoesntExist,
     #[error("voice packet took to long to send, discarding")]
     PacketDiscarded,
+
+    #[error("anyhow error: {0}")]
+    UnknownError(#[from] anyhow::Error)
 }
 
 // impl actix_web::error::ResponseError for MumbleError {}
