@@ -20,7 +20,7 @@ mod target;
 mod varint;
 mod voice;
 
-use crate::clean::clean_loop;
+use crate::clean::handle_server_tick;
 use crate::http::create_http_server;
 use crate::proto::mumble::Version;
 use crate::server::{create_tcp_server, create_udp_server};
@@ -46,7 +46,6 @@ use tokio_util::sync::CancellationToken;
 struct Args {
     #[clap(long, action = clap::ArgAction::HelpLong)]
     help: Option<bool>,
-
     /// Listen address for TCP and UDP connections for mumble voip clients (or other clients that support the mumble protocol)
     #[clap(short, long, value_parser, default_value = "0.0.0.0:64738")]
     listen: String,
@@ -122,7 +121,7 @@ async fn main() {
     let clean_state = state.clone();
 
     set.spawn(async move {
-        clean_loop(clean_state).await;
+        handle_server_tick(clean_state).await;
     });
 
     let tcp_addr: SocketAddr = args.listen.parse().expect("Got invalid data for 'listen', it was not a usable ip");
@@ -158,9 +157,7 @@ async fn main() {
         tracing::info!("http server not started, no auth password provided");
     }
 
-    while let Some(_) = set.join_next().await {
-    }
-
+    while let Some(_) = set.join_next().await {}
 }
 
 fn generate_rustls_cert() -> ServerConfig {

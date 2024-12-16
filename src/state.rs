@@ -1,7 +1,7 @@
 use crate::channel::{Channel, ChannelRef};
 use crate::client::{Client, ClientRef};
 use crate::crypt::CryptState;
-use crate::error::MumbleError;
+use crate::error::{DisconnectReason, MumbleError};
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ChannelRemove, ChannelState, CodecVersion, UserRemove, Version};
 use crate::proto::{message_to_bytes, MessageKind};
@@ -37,13 +37,13 @@ impl Default for CodecState {
 }
 
 impl CodecState {
-    pub fn get_version(&self) -> i32 {
-        if self.prefer_alpha {
-            return self.alpha;
-        }
+    // pub fn get_version(&self) -> i32 {
+    //     if self.prefer_alpha {
+    //         return self.alpha;
+    //     }
 
-        self.beta
-    }
+    //     self.beta
+    // }
 
     pub fn get_codec_version(&self) -> CodecVersion {
         let mut codec_version = CodecVersion::default();
@@ -193,7 +193,7 @@ impl ServerState {
             // remove the client from the channel
             channel.clients.remove_async(&client_session).await;
 
-            channel.parent_id?;;
+            channel.parent_id?;
 
             // if the channel isn't temporary then we want to keep it
             if !channel.temporary || !channel.get_clients().is_empty() {
@@ -327,7 +327,7 @@ impl ServerState {
         client.send_crypt_setup(true).await
     }
 
-    pub async fn disconnect(&self, client_session: u32) {
+    pub async fn disconnect(&self, client_session: u32, disconnect_reason: DisconnectReason) {
         crate::metrics::CLIENTS_TOTAL.dec();
 
         let client = self.clients.remove_async(&client_session).await;
@@ -341,11 +341,10 @@ impl ServerState {
             .await;
 
         if let Some((_, client)) = client {
-            tracing::info!("Removing client {}", client);
+            tracing::info!("Removing client {} with reason {:?}", client, disconnect_reason);
 
-            // This is a hack to get the publisher out of its loop, if its already out of its loop
-            // then we don't care and we can just ignore it
-            let _ = client.publisher.try_send(ClientMessage::Disconnect);
+            // tell the client loop to shut down their UDP/TCP threads
+            client.cancel_token.cancel();
 
             // close the writer instantly so even if there's any References to client still, we will
             // still remove the socket as soon as we can.
