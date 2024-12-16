@@ -169,6 +169,9 @@ impl MessageHandler {
             let client = &client;
             let token = client.cancel_token.child_token();
             loop {
+                if consumer.is_closed() {
+                    return Err(anyhow!("UDP consumer lost"))
+                }
                 tokio::select! {
                     _ = token.cancelled() => {
                         break;

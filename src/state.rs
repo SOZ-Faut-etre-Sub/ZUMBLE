@@ -370,6 +370,7 @@ impl ServerState {
 
             let channel_id = client.channel_id.load(Ordering::Relaxed);
 
+            // TODO: Figure out if this is needed whenever we are already deleting the client
             self.broadcast_client_delete(client_session, channel_id).await;
         }
     }
