@@ -22,6 +22,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_rustls::server::TlsStream;
+use tokio_util::sync::CancellationToken;
 
 pub type ClientRef = Arc<Client>;
 
@@ -40,13 +41,15 @@ pub struct Client {
     // pub tokens: Vec<String>,
     pub crypt_state: Mutex<CryptState>,
     pub udp_socket_addr: ArcSwapOption<SocketAddr>,
-    // pub use_opus: bool,
-    pub codecs: Vec<i32>,
+    // Token used to cancel any tasks related to this client, i.e. tcp/udp loops
+    pub cancel_token: CancellationToken,
     pub udp_socket: Arc<UdpSocket>,
     pub publisher: Sender<ClientMessage>,
     pub targets: VoiceTargetArray,
     pub last_tcp_ping: AtomicCell<Instant>,
     pub last_udp_ping: AtomicCell<Instant>,
+    // the amount of bad tcp messages the client has sent, after 20 the client will be dropped automatically
+    pub bad_tcp_count: AtomicU32,
 }
 
 impl Display for Client {
@@ -73,7 +76,6 @@ impl Client {
 
         // Send crypt setup
         send_message(MessageKind::CryptSetup, &crypt_setup, stream).await?;
-
 
         Ok((version, authenticate, crypt))
     }
@@ -104,14 +106,14 @@ impl Client {
             deaf: AtomicBool::new(false),
             mute: AtomicBool::new(false),
             udp_socket_addr: ArcSwapOption::from(None),
-            // use_opus: if authenticate.has_opus() { authenticate.get_opus() } else { false },
-            codecs: authenticate.get_celt_versions().to_vec(),
+            cancel_token: CancellationToken::new(),
             authenticate,
             udp_socket,
             publisher,
             targets,
             last_tcp_ping: AtomicCell::new(Instant::now()),
             last_udp_ping: AtomicCell::new(Instant::now()),
+            bad_tcp_count: AtomicU32::new(0),
         })
     }
 

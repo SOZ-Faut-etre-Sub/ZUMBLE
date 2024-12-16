@@ -8,5 +8,4 @@ pub enum ClientMessage {
     RouteVoicePacket(VoicePacket<ClientBound>),
     SendVoicePacket(Arc<VoicePacket<ClientBound>>),
     SendMessage { kind: MessageKind, payload: Arc<Bytes> },
-    Disconnect,
 }

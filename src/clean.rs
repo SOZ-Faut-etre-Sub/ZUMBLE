@@ -1,11 +1,11 @@
-use crate::error::MumbleError;
+use crate::error::{DisconnectReason, MumbleError};
 use crate::state::{ServerState, ServerStateRef};
 use std::sync::Arc;
 use std::time::Instant;
 
-pub async fn clean_loop(state: ServerStateRef) {
+pub async fn handle_server_tick(state: ServerStateRef) {
     loop {
-        tracing::trace!("cleaning clients");
+        tracing::trace!("Running client clean loop");
 
         match clean_run(&state).await {
             Ok(_) => (),
@@ -19,18 +19,19 @@ pub async fn clean_loop(state: ServerStateRef) {
 }
 
 async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
-    let mut clients_to_remove = Vec::new();
+    let mut clients_to_remove = scc::HashMap::new();
     let mut clients_to_reset_crypt = Vec::new();
 
     {
         let mut iter = state.clients.first_entry_async().await;
         while let Some(client) = iter {
-            // if we can reset our crypt state, we should block resets if we hare being removed or
-            // if the publisher is closed
-            let mut can_reset_crypt = true;
+            // if we lost our publisher then we should just remove the client, we won't be able to handle anything in this state.
             if client.publisher.is_closed() {
-                can_reset_crypt = false;
-                clients_to_remove.push(client.session_id);
+                let _ = clients_to_remove
+                    .insert_async(client.session_id, DisconnectReason::LostReceivingChannel)
+                    .await;
+                iter = client.next_async().await;
+                continue;
             }
 
             let now = Instant::now();
@@ -38,8 +39,10 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
             let since_last_udp = now.duration_since(client.last_udp_ping.load());
 
             if since_last_udp.as_secs() > 30 {
-                can_reset_crypt = false;
-                clients_to_remove.push(client.session_id);
+                // resetting this will cause the client to be removed from the "good socket" list
+                clients_to_reset_crypt.push(Arc::clone(client.get()));
+                iter = client.next_async().await;
+                continue;
             }
 
             let since_last_tcp = now.duration_since(client.last_tcp_ping.load());
@@ -47,15 +50,17 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
             // if we haven't gotten a tcp ping in 10 seconds (which means they missed 2 mumble
             // pings, or 10 for FiveM) we should be safe to drop the client early.
             if since_last_tcp.as_secs() > 10 {
-                clients_to_remove.push(client.session_id);
+                let _ = clients_to_remove
+                    .insert_async(client.session_id, DisconnectReason::ClientTimedOutTcp)
+                    .await;
+                iter = client.next_async().await;
+                continue;
             }
 
-            if can_reset_crypt {
-                let last_good = { client.crypt_state.lock().await.last_good };
+            let last_good = { client.crypt_state.lock().await.last_good };
 
-                if now.duration_since(last_good).as_millis() > 8000 {
-                    clients_to_reset_crypt.push(Arc::clone(client.get()))
-                }
+            if now.duration_since(last_good).as_millis() > 8000 {
+                clients_to_reset_crypt.push(Arc::clone(client.get()))
             }
 
             iter = client.next_async().await;
@@ -71,11 +76,12 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
         }
     }
 
-    let futures = clients_to_remove
-        .iter()
-        .map(|session_id| state.disconnect(*session_id));
+    let mut iter = clients_to_remove.first_entry_async().await;
+    while let Some(v) = iter {
+        state.disconnect(*v.key(), *v.get()).await;
 
-    futures_util::future::join_all(futures).await;
+        iter = v.next_async().await;
+    }
 
     Ok(())
 }

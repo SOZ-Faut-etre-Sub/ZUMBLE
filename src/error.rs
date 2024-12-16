@@ -24,7 +24,7 @@ pub enum MumbleError {
     PacketDiscarded,
 
     #[error("anyhow error: {0}")]
-    UnknownError(#[from] anyhow::Error)
+    UnknownError(#[from] anyhow::Error),
 }
 
 // impl actix_web::error::ResponseError for MumbleError {}
@@ -41,4 +41,14 @@ pub enum DecryptError {
     Late,
     #[error("mac error")]
     Mac,
+}
+
+#[derive(Debug, Error, Clone, Copy)]
+pub enum DisconnectReason {
+    #[error("Client disconnected")]
+    Disconnected,
+    #[error("Client stopped responding to TCP pings")]
+    ClientTimedOutTcp,
+    #[error("Clients receiving channel got removed")]
+    LostReceivingChannel,
 }

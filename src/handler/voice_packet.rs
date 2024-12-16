@@ -1,6 +1,8 @@
 use scc::HashMap;
+use tokio::sync::mpsc::error::TrySendError;
 
 use crate::client::ClientRef;
+use crate::error::DisconnectReason;
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
 use crate::voice::{ClientBound, VoicePacket};
@@ -95,19 +97,29 @@ impl Handler for VoicePacket<ClientBound> {
             // remove the calling client from the session list so we don't have to branch here.
             listening_clients.remove_async(session_id).await;
 
-            listening_clients.scan_async(|_k, cl| {
-                if cl.is_deaf() {
-                    return;
-                }
-
-                match cl.publisher.try_send(ClientMessage::SendVoicePacket(Arc::clone(&packet))) {
-                    Ok(_) => {}
-                    Err(err) => {
-                        tracing::error!("error sending voice packet message to {}: {}", cl, err);
+            listening_clients
+                .scan_async(|_k, cl| {
+                    if cl.is_deaf() {
+                        return;
                     }
-                }
 
-            }).await;
+                    match cl.publisher.try_send(ClientMessage::SendVoicePacket(Arc::clone(&packet))) {
+                        Ok(_) => {}
+                        Err(TrySendError::Closed(_)) => {
+                            let session_id = cl.session_id;
+                            let state = Arc::clone(&state);
+                            // If we don't have a channel then we should drop the client as the receiving part of the channel got canceled
+                            // TODO: have a queue wrapper for state
+                            tokio::spawn(async move {
+                                state.disconnect(session_id, DisconnectReason::LostReceivingChannel).await;
+                            });
+                        }
+                        Err(err) => {
+                            tracing::error!("error sending voice packet message to {}: {}", cl, err);
+                        }
+                    }
+                })
+                .await;
         }
 
         Ok(())

@@ -2,6 +2,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use crate::client::{Client, ClientRef};
+use crate::error::DisconnectReason;
 use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
 use crate::proto::mumble::Version;
@@ -111,21 +112,20 @@ async fn handle_new_client(
 
     let state_cl = state.clone();
     let client_cl = client.clone();
+
     match client_run(read, rx, &state_cl, &client_cl).await {
         Ok(_) => (),
         Err(_e) => (),
     }
 
-    tracing::info!("client {} disconnected", username);
-
-    state_cl.disconnect(client.session_id).await;
+    state_cl.disconnect(client.session_id, DisconnectReason::Disconnected).await;
 
     Ok(())
 }
 
 pub async fn client_run(
-    mut read: ReadHalf<TlsStream<TcpStream>>,
-    mut receiver: Receiver<ClientMessage>,
+    read: ReadHalf<TlsStream<TcpStream>>,
+    receiver: Receiver<ClientMessage>,
     state: &ServerStateRef,
     client: &ClientRef,
 ) -> Result<(), anyhow::Error> {
@@ -154,9 +154,20 @@ pub async fn client_run(
         }
     }
 
+    // This spawns a task that will be used for both TCP and UDP messages.
     let mut res = MessageHandler::handle(read, receiver, state, client).await;
 
     if let Some(e) = res.join_next().await {
+        if let Ok(e) = e {
+            match e {
+                Ok(()) => {
+                    tracing::debug!("MessageHandler shut down with Success Response");
+                }
+                Err(e) => {
+                    tracing::debug!("MessageHandler shut down with error: {:?}", e);
+                }
+            }
+        }
         // if one of the tasks fails, we should drop the other (i.e. whenever we manually
         // disconnect this will kill the client)
         res.shutdown().await;
