@@ -59,17 +59,27 @@ impl Display for Client {
 }
 
 impl Client {
+    /// Handles the initial client hand shake, this can fail if the client sends a bunch of UDPTunnel packets (by default 10)
+    /// or if the client fails to respond to the request for their version/auth packets within the specified time (by default 1 second)
     pub async fn init(
         stream: &mut TlsStream<TcpStream>,
         server_version: Version,
     ) -> Result<(Version, Authenticate, CryptState), MumbleError> {
-        let version: Version = expected_message(MessageKind::Version, stream, 0).await?;
+        let version: Version = match timeout(Duration::from_secs(1), expected_message(MessageKind::Version, stream)).await {
+            Ok(version) => version?,
+            Err(e) => {
+                return Err(MumbleError::ClientInitFailed(e));
+            }
+        };
 
         // Send version
         send_message(MessageKind::Version, &server_version, stream).await?;
 
         // Get authenticate
-        let authenticate: Authenticate = expected_message(MessageKind::Authenticate, stream, 0).await?;
+        let authenticate: Authenticate = match timeout(Duration::from_secs(1), expected_message(MessageKind::Authenticate, stream)).await {
+            Ok(auth) => auth?,
+            Err(e) => return Err(MumbleError::ClientInitFailed(e)),
+        };
 
         let crypt = CryptState::default();
         let crypt_setup = crypt.get_crypt_setup();
