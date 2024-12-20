@@ -134,13 +134,9 @@ pub async fn send_message<T: Message, S: AsyncWrite + Unpin>(kind: MessageKind, 
     Ok(())
 }
 
-pub async fn expected_message<T: Message + Handler, S: AsyncRead + Unpin>(
-    kind: MessageKind,
-    stream: &mut S,
-    retry: u8,
-) -> Result<T, MumbleError> {
+pub async fn expected_message<T: Message + Handler, S: AsyncRead + Unpin>(kind: MessageKind, stream: &mut S) -> Result<T, MumbleError> {
     let mut message_kind = stream.read_u16().await?;
-    let mut retry = retry;
+    let mut retry = 0;
 
     while message_kind != kind as u16 && retry < 10 {
         let size = stream.read_u32().await?;

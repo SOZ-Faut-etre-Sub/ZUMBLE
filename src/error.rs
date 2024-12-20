@@ -1,4 +1,5 @@
 use thiserror::Error;
+use tokio::time::error::Elapsed;
 
 use crate::message::ClientMessage;
 
@@ -22,6 +23,8 @@ pub enum MumbleError {
     ChannelDoesntExist,
     #[error("voice packet took to long to send, discarding")]
     PacketDiscarded,
+    #[error("client failed to send back packet within the time frame")]
+    ClientInitFailed(Elapsed),
 
     #[error("anyhow error: {0}")]
     UnknownError(#[from] anyhow::Error),
