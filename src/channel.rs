@@ -1,8 +1,9 @@
-use crate::client::ClientRef;
+use crate::client::ClientArc;
 use crate::proto::mumble::ChannelState;
 use crate::server::constants::ConcurrentHashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
+pub type WeakChannelRef = Weak<Channel>;
 pub type ChannelRef = Arc<Channel>;
 
 pub struct Channel {
@@ -12,8 +13,8 @@ pub struct Channel {
     // unused, the client will get this via ChannelState anyways
     // pub description: String,
     pub temporary: bool,
-    pub listeners: ConcurrentHashMap<u32, ClientRef>,
-    pub clients: ConcurrentHashMap<u32, ClientRef>,
+    pub listeners: ConcurrentHashMap<u32, ClientArc>,
+    pub clients: ConcurrentHashMap<u32, ClientArc>,
     channel_state_cache: Arc<ChannelState>,
 }
 
@@ -48,11 +49,11 @@ impl Channel {
         Arc::clone(&self.channel_state_cache)
     }
 
-    pub fn get_listeners(&self) -> &ConcurrentHashMap<u32, ClientRef> {
+    pub fn get_listeners(&self) -> &ConcurrentHashMap<u32, ClientArc> {
         &self.listeners
     }
 
-    pub fn get_clients(&self) -> &ConcurrentHashMap<u32, ClientRef> {
+    pub fn get_clients(&self) -> &ConcurrentHashMap<u32, ClientArc> {
         &self.clients
     }
 }

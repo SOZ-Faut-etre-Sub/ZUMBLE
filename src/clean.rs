@@ -25,13 +25,14 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
 
     {
         let mut iter = state.clients.first_entry_async().await;
-        while let Some(client) = iter {
+        while let Some(client_iter) = iter {
+            let client = client_iter.get();
             // if we lost our publisher then we should just remove the client, we won't be able to handle anything in this state.
             if client.publisher.is_closed() {
                 let _ = clients_to_remove
                     .insert_async(client.session_id, DisconnectReason::LostReceivingChannel)
                     .await;
-                iter = client.next_async().await;
+                iter = client_iter.next_async().await;
                 continue;
             }
 
@@ -41,8 +42,8 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
 
             if since_last_udp.as_secs() > 30 {
                 // resetting this will cause the client to be removed from the "good socket" list
-                clients_to_reset_crypt.push(Arc::clone(client.get()));
-                iter = client.next_async().await;
+                clients_to_reset_crypt.push(Arc::clone(client));
+                iter = client_iter.next_async().await;
                 continue;
             }
 
@@ -54,17 +55,17 @@ async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
                 let _ = clients_to_remove
                     .insert_async(client.session_id, DisconnectReason::ClientTimedOutTcp)
                     .await;
-                iter = client.next_async().await;
+                iter = client_iter.next_async().await;
                 continue;
             }
 
             let last_good = { client.crypt_state.lock().await.last_good };
 
             if now.duration_since(last_good).as_millis() > 8000 {
-                clients_to_reset_crypt.push(Arc::clone(client.get()))
+                clients_to_reset_crypt.push(Arc::clone(client))
             }
 
-            iter = client.next_async().await;
+            iter = client_iter.next_async().await;
         }
     }
 

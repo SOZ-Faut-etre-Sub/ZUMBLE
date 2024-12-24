@@ -1,6 +1,6 @@
 use anyhow::Error;
 
-use crate::client::ClientRef;
+use crate::client::ClientArc;
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::ChannelState;
@@ -10,7 +10,7 @@ use crate::state::ServerStateRef;
 use super::MumbleResult;
 
 impl Handler for ChannelState {
-    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> MumbleResult {
+    async fn handle(&self, state: &ServerStateRef, client: &ClientArc) -> MumbleResult {
         if self.has_channel_id() {
             tracing::warn!("editing channel is not supported");
 

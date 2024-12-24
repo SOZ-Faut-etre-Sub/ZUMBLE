@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::client::ClientRef;
+use scc::ebr::Guard;
+
+use crate::client::ClientArc;
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::UserState;
@@ -9,7 +11,7 @@ use crate::state::ServerStateRef;
 use super::MumbleResult;
 
 impl Handler for UserState {
-    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> MumbleResult {
+    async fn handle(&self, state: &ServerStateRef, client: &ClientArc) -> MumbleResult {
         let session_id = { client.session_id };
 
         if self.get_session() != session_id {
@@ -23,15 +25,17 @@ impl Handler for UserState {
         }
 
         for channel_id in self.get_listening_channel_add() {
-            if let Some(channel) = state.channels.get_async(channel_id).await {
+            let guard = Guard::new();
+            if let Some(channel) = state.channels.peek(channel_id, &guard) {
                 // if this errors it means our client is already in it, we can just ignore.
-                let _ = channel.listeners.insert_async(session_id, Arc::clone(client)).await;
+                let _ = channel.listeners.insert(session_id, Arc::clone(client));
             }
         }
 
         for channel_id in self.get_listening_channel_remove() {
-            if let Some(channel) = state.channels.get_async(channel_id).await {
-                channel.listeners.remove_async(&session_id).await;
+            let guard = Guard::new();
+            if let Some(channel) = state.channels.peek(channel_id, &guard) {
+                channel.listeners.remove(&session_id);
             }
         }
 

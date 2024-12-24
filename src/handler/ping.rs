@@ -1,4 +1,4 @@
-use crate::client::ClientRef;
+use crate::client::ClientArc;
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::Ping;
@@ -9,7 +9,7 @@ use std::time::Instant;
 use super::MumbleResult;
 
 impl Handler for Ping {
-    async fn handle(&self, _state: &ServerStateRef, client: &ClientRef) -> MumbleResult {
+    async fn handle(&self, _state: &ServerStateRef, client: &ClientArc) -> MumbleResult {
         let mut ping = Ping::default();
         ping.set_timestamp(self.get_timestamp());
 
@@ -25,6 +25,9 @@ impl Handler for Ping {
             ping.set_resync(crypt_state_read.resync);
         }
 
-        client.send_message(MessageKind::Ping, &ping).await.map_err(|e| anyhow::Error::new(e))
+        client
+            .send_message(MessageKind::Ping, &ping)
+            .await
+            .map_err(|e| anyhow::Error::new(e))
     }
 }

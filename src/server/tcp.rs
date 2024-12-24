@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 use std::time::Duration;
 
-use crate::client::{Client, ClientRef};
+use crate::client::{Client, ClientArc};
 use crate::error::DisconnectReason;
 use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
@@ -106,7 +106,7 @@ async fn handle_new_client(
     let (tx, rx) = mpsc::channel(MAX_BANDWIDTH_IN_BYTES);
 
     let username = authenticate.get_username().to_string();
-    let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip).await;
+    let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip);
 
     tracing::info!("TCP new client {} connected {}", username, peer_ip);
 
@@ -127,7 +127,7 @@ pub async fn client_run(
     read: ReadHalf<TlsStream<TcpStream>>,
     receiver: Receiver<ClientMessage>,
     state: &ServerStateRef,
-    client: &ClientRef,
+    client: &ClientArc,
 ) -> Result<(), anyhow::Error> {
     let codec_version = { state.codec_state.get_codec_version() };
 
