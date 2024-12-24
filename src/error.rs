@@ -25,6 +25,8 @@ pub enum MumbleError {
     PacketDiscarded,
     #[error("client failed to send back packet within the time frame")]
     ClientInitFailed(Elapsed),
+    #[error("writter shut down")]
+    WritterShutDown,
 
     #[error("anyhow error: {0}")]
     UnknownError(#[from] anyhow::Error),

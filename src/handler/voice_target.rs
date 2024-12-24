@@ -1,4 +1,4 @@
-use crate::client::ClientRef;
+use crate::client::ClientArc;
 use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::VoiceTarget;
@@ -7,7 +7,7 @@ use crate::state::ServerStateRef;
 use super::MumbleResult;
 
 impl Handler for VoiceTarget {
-    async fn handle(&self, _: &ServerStateRef, client: &ClientRef) -> MumbleResult{
+    async fn handle(&self, _: &ServerStateRef, client: &ClientArc) -> MumbleResult {
         // mumble spec limits the usable voice targets to 1..=30
         if self.get_id() < 1 || self.get_id() >= 31 {
             tracing::error!("invalid voice target id: {}", self.get_id());

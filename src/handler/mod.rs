@@ -15,7 +15,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::client::ClientRef;
+use crate::client::ClientArc;
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::proto::mumble;
@@ -32,13 +32,13 @@ use tokio::task::JoinSet;
 type MumbleResult = anyhow::Result<()>;
 
 pub trait Handler {
-    async fn handle(&self, state: &ServerStateRef, client: &ClientRef) -> MumbleResult;
+    async fn handle(&self, state: &ServerStateRef, client: &ClientArc) -> MumbleResult;
 }
 
 pub struct MessageHandler;
 
 impl MessageHandler {
-    async fn try_handle<T: Message + Handler>(buf: &[u8], state: &ServerStateRef, client: &ClientRef) -> Result<(), MumbleError> {
+    async fn try_handle<T: Message + Handler>(buf: &[u8], state: &ServerStateRef, client: &ClientArc) -> Result<(), MumbleError> {
         let message = T::parse_from_bytes(buf)?;
 
         tracing::trace!("[{}] handle message: {:?}, {:?}", client, std::any::type_name::<T>(), message);
@@ -51,7 +51,7 @@ impl MessageHandler {
         kind: Result<u16, std::io::Error>,
         stream: &mut S,
         state: &ServerStateRef,
-        client: &ClientRef,
+        client: &ClientArc,
     ) -> MumbleResult {
         let kind = kind?;
         let size = stream.read_u32().await?;
@@ -129,7 +129,7 @@ impl MessageHandler {
         mut stream: S,
         mut consumer: Receiver<ClientMessage>,
         server_state: &ServerStateRef,
-        client_ref: &ClientRef,
+        client_ref: &ClientArc,
     ) -> JoinSet<Result<(), anyhow::Error>> {
         let mut join_set = JoinSet::new();
 

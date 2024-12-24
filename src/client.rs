@@ -10,11 +10,13 @@ use crate::voice::{encode_voice_packet, ClientBound, VoicePacket};
 use arc_swap::ArcSwapOption;
 use bytes::BytesMut;
 use crossbeam::atomic::AtomicCell;
+use protobuf::reflect::ProtobufValue;
 use protobuf::Message;
+use scc::ebr::Guard;
 use std::fmt::Display;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
@@ -24,7 +26,8 @@ use tokio::time::timeout;
 use tokio_rustls::server::TlsStream;
 use tokio_util::sync::CancellationToken;
 
-pub type ClientRef = Arc<Client>;
+pub type ClientArc = Arc<Client>;
+pub type WeakClient = Weak<Client>;
 
 type VoiceTargetArray = [Arc<VoiceTarget>; 29];
 
@@ -139,10 +142,26 @@ impl Client {
     }
 
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {
-        let mut writer = self.write.lock().await;
-        match writer.write_all(data).await {
-            Ok(_bytes) => Ok(()),
-            Err(e) => Err(e.into()),
+        // if our cancel token gets called mid write we should abort out of our write with an error
+        tokio::select! {
+             _ = self.cancel_token.cancelled() => {
+                 return Err(MumbleError::WritterShutDown);
+             }
+             mut writer_lock = self.write.lock() => {
+                 tokio::select! {
+                     _ = self.cancel_token.cancelled() => {
+                         return Err(MumbleError::WritterShutDown);
+                     }
+                     res = writer_lock.write_all(data) => {
+                         match res {
+                            Ok(_bytes) => Ok(()),
+                            Err(e) => Err(e.into()),
+
+                         }
+                     }
+
+                 }
+             }
         }
     }
 
@@ -214,24 +233,39 @@ impl Client {
     }
 
     pub async fn sync_client_and_channels(&self, state: &ServerStateRef) -> Result<(), MumbleError> {
-        // Send channel states
-        let mut iter = state.channels.first_entry_async().await;
-        while let Some(channel) = iter {
-            let channel_state = { channel.get_channel_state() };
+        // will contain Weak counts to the channels/clients to get the initial state from
+        let mut weak_channels = Vec::new();
+        let mut weak_clients = Vec::new();
 
-            self.send_message(MessageKind::ChannelState, channel_state.as_ref()).await?;
-
-            iter = channel.next_async().await;
+        // iterate through the channels sync so we don't hold any locks longer than we need to
+        {
+            let guard = Guard::new();
+            for (_k, channel) in state.channels.iter(&guard) {
+                // give the channel stat a weak reference to the current channel, as the channel might
+                // not exist when this is actually called
+                weak_channels.push(Arc::downgrade(&channel));
+            }
         }
 
-        // send client sates
-        let mut iter = state.clients.first_entry_async().await;
-        while let Some(client) = iter {
-            let user_state = client.get_user_state();
+        // same for clients
+        {
+            let guard = Guard::new();
+            for (_k, client) in state.clients.iter(&guard) {
+                weak_clients.push(Arc::downgrade(&client))
+            }
+        }
 
-            self.send_message(MessageKind::UserState, &user_state).await?;
+        for channel in weak_channels {
+            if let Some(channel) = channel.upgrade() {
+                self.send_message(MessageKind::ChannelState, channel.get_channel_state().as_ref())
+                    .await?;
+            }
+        }
 
-            iter = client.next_async().await;
+        for user in weak_clients {
+            if let Some(user) = user.upgrade() {
+                self.send_message(MessageKind::UserState, &user.get_user_state()).await?;
+            }
         }
 
         Ok(())
