@@ -5,11 +5,11 @@ use crate::error::{DisconnectReason, MumbleError};
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ChannelRemove, ChannelState, CodecVersion, UserRemove, Version};
 use crate::proto::{message_to_bytes, MessageKind};
-use crate::server::constants::MAX_CLIENTS;
+use crate::server::constants::{ConcurrentHashMap, MAX_CLIENTS};
 use crate::voice::{ServerBound, VoicePacket};
 use bytes::BytesMut;
 use protobuf::Message;
-use scc::{HashCache, HashMap};
+use scc::HashCache;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -59,11 +59,11 @@ impl CodecState {
 pub type ServerStateRef = Arc<ServerState>;
 
 pub struct ServerState {
-    pub clients: HashMap<u32, ClientRef>,
-    pub clients_without_udp: HashMap<u32, ClientRef>,
-    pub clients_by_socket: HashMap<SocketAddr, ClientRef>,
-    // pub clients_by_peer: HashMap<IpAddr, AtomicU32>,
-    pub channels: HashMap<u32, ChannelRef>,
+    pub clients: ConcurrentHashMap<u32, ClientRef>,
+    pub clients_without_udp: ConcurrentHashMap<u32, ClientRef>,
+    pub clients_by_socket: ConcurrentHashMap<SocketAddr, ClientRef>,
+    // pub clients_by_peer: ConcurrentHashMap<IpAddr, AtomicU32>,
+    pub channels: ConcurrentHashMap<u32, ChannelRef>,
     pub codec_state: Arc<CodecState>,
     pub socket: Arc<UdpSocket>,
     pub logs: HashCache<SocketAddr, ()>,
@@ -73,17 +73,17 @@ pub struct ServerState {
 
 impl ServerState {
     pub fn new(socket: Arc<UdpSocket>) -> Self {
-        let channels = HashMap::new();
+        let channels = ConcurrentHashMap::new();
         channels.upsert(0, Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false));
 
         Self {
             // we preallocate the maximum amount of clients to prevent the possibility of resizes
             // later, which will prevent double-sends in certain situations
-            clients: HashMap::with_capacity(MAX_CLIENTS),
+            clients: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
             logs: HashCache::with_capacity(500, 1000),
-            clients_without_udp: HashMap::with_capacity(MAX_CLIENTS),
-            clients_by_socket: HashMap::with_capacity(MAX_CLIENTS),
-            // clients_by_peer: HashMap::with_capacity(MAX_CLIENTS),
+            clients_without_udp: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
+            clients_by_socket: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
+            // clients_by_peer: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
             channels,
             codec_state: Arc::new(CodecState::default()),
             socket,

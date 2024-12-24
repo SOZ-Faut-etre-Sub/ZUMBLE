@@ -1,4 +1,5 @@
 use crate::error::{DisconnectReason, MumbleError};
+use crate::server::constants::ConcurrentHashMap;
 use crate::state::{ServerState, ServerStateRef};
 use std::sync::Arc;
 use std::time::Instant;
@@ -19,7 +20,7 @@ pub async fn handle_server_tick(state: ServerStateRef) {
 }
 
 async fn clean_run(state: &ServerState) -> Result<(), MumbleError> {
-    let mut clients_to_remove = scc::HashMap::new();
+    let mut clients_to_remove = ConcurrentHashMap::new();
     let mut clients_to_reset_crypt = Vec::new();
 
     {
