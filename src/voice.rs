@@ -95,7 +95,8 @@ impl VoicePacketDst for ClientBound {
     type SessionId = u32;
 
     fn read_session_id<T: Read + Sized>(buf: &mut T) -> Result<Self::SessionId, io::Error> {
-        Ok(buf.read_varint()? as u32)
+        let var_int = buf.read_varint()?;
+        Ok(var_int as u32)
     }
 
     fn write_session_id(buf: &mut BytesMut, session_id: &Self::SessionId) {
