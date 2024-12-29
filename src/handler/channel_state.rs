@@ -1,7 +1,6 @@
 use anyhow::Error;
 
 use crate::client::ClientArc;
-use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::ChannelState;
 use crate::proto::MessageKind;

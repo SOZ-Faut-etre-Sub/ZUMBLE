@@ -1,5 +1,4 @@
 use crate::client::ClientArc;
-use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::Ping;
 use crate::proto::MessageKind;
@@ -28,6 +27,6 @@ impl Handler for Ping {
         client
             .send_message(MessageKind::Ping, &ping)
             .await
-            .map_err(|e| anyhow::Error::new(e))
+            .map_err(anyhow::Error::new)
     }
 }

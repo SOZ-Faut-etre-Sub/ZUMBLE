@@ -13,7 +13,6 @@ mod voice_target;
 use anyhow::anyhow;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::client::ClientArc;
 use crate::error::MumbleError;

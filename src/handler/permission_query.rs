@@ -1,5 +1,4 @@
 use crate::client::ClientArc;
-use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::PermissionQuery;
 use crate::proto::MessageKind;

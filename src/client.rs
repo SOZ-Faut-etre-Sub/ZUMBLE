@@ -145,12 +145,12 @@ impl Client {
         // if our cancel token gets called mid write we should abort out of our write with an error
         tokio::select! {
              _ = self.cancel_token.cancelled() => {
-                 return Err(MumbleError::WritterShutDown);
+                 Err(MumbleError::WritterShutDown)
              }
              mut writer_lock = self.write.lock() => {
                  tokio::select! {
                      _ = self.cancel_token.cancelled() => {
-                         return Err(MumbleError::WritterShutDown);
+                         Err(MumbleError::WritterShutDown)
                      }
                      res = writer_lock.write_all(data) => {
                          match res {
@@ -243,7 +243,7 @@ impl Client {
             for (_k, channel) in state.channels.iter(&guard) {
                 // give the channel stat a weak reference to the current channel, as the channel might
                 // not exist when this is actually called
-                weak_channels.push(Arc::downgrade(&channel));
+                weak_channels.push(Arc::downgrade(channel));
             }
         }
 
@@ -251,7 +251,7 @@ impl Client {
         {
             let guard = Guard::new();
             for (_k, client) in state.clients.iter(&guard) {
-                weak_clients.push(Arc::downgrade(&client))
+                weak_clients.push(Arc::downgrade(client))
             }
         }
 
