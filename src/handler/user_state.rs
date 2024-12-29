@@ -3,7 +3,6 @@ use std::sync::Arc;
 use scc::ebr::Guard;
 
 use crate::client::ClientArc;
-use crate::error::MumbleError;
 use crate::handler::Handler;
 use crate::proto::mumble::UserState;
 use crate::state::ServerStateRef;

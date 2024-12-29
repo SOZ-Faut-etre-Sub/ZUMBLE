@@ -1,5 +1,5 @@
 use crate::channel::{Channel, ChannelRef, WeakChannelRef};
-use crate::client::{Client, ClientArc, WeakClient};
+use crate::client::{Client, ClientArc};
 use crate::crypt::CryptState;
 use crate::error::{DisconnectReason, MumbleError};
 use crate::message::ClientMessage;
@@ -13,8 +13,8 @@ use scc::ebr::Guard;
 use scc::HashCache;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Weak};
-use tokio::io::{AsyncWriteExt, WriteHalf};
+use std::sync::Arc;
+use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
 use tokio_rustls::server::TlsStream;
