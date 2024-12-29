@@ -80,7 +80,7 @@ impl MessageHandler {
             .with_label_values(&["tcp", "input", message_kind.to_string().as_str()])
             .inc_by(buf.len() as u64);
 
-        let res = match message_kind {
+        match message_kind {
             MessageKind::Version => Self::try_handle::<mumble::Version>(&buf, state, client)
                 .await
                 .context("kind: Version"),
@@ -120,9 +120,7 @@ impl MessageHandler {
                 tracing::warn!("unsupported message kind: {:?}", message_kind);
                 Err(anyhow!("Unsupported message kind: {}", message_kind))
             }
-        };
-
-        res
+        }
     }
 
     pub async fn handle<S: AsyncRead + Unpin + Send + 'static>(
