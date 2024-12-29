@@ -22,7 +22,6 @@ impl Handler for VoicePacket<ClientBound> {
 
         if let VoicePacket::<ClientBound>::Audio { target, session_id, .. } = self {
             // copy the data into an arc so we can reuse the packet for each client
-            let packet = Arc::new(self.clone());
 
             let listening_clients: HashMap<u32, WeakClient> = HashMap::new();
 
@@ -36,7 +35,7 @@ impl Handler for VoicePacket<ClientBound> {
                         let guard = Guard::new();
 
                         for (session_id, client) in channel.clients.iter(&guard) {
-                            listening_clients.insert(*session_id, Arc::downgrade(client));
+                            let _ = listening_clients.insert(*session_id, Arc::downgrade(client));
                         }
                     }
                 }
@@ -50,7 +49,7 @@ impl Handler for VoicePacket<ClientBound> {
                             for (session, _) in target.sessions.iter(&guard) {
                                 let client_guard = Guard::new();
                                 if let Some(client) = state.clients.peek(session, &client_guard) {
-                                    listening_clients.insert(*session, Arc::downgrade(client));
+                                    let _ = listening_clients.insert(*session, Arc::downgrade(client));
                                 }
                             }
                         }
@@ -63,14 +62,14 @@ impl Handler for VoicePacket<ClientBound> {
                                     {
                                         let guard = Guard::new();
                                         for (session_id, client) in target_channel.listeners.iter(&guard) {
-                                            listening_clients.insert(*session_id, Arc::downgrade(client));
+                                            let _ = listening_clients.insert(*session_id, Arc::downgrade(client));
                                         }
                                     }
 
                                     {
                                         let guard = Guard::new();
                                         for (session_id, client) in target_channel.clients.iter(&guard) {
-                                            listening_clients.insert(*session_id, Arc::downgrade(client));
+                                            let _ = listening_clients.insert(*session_id, Arc::downgrade(client));
                                         }
                                     }
                                 }
@@ -80,7 +79,7 @@ impl Handler for VoicePacket<ClientBound> {
                 }
                 // Loopback
                 31 => {
-                    client.send_voice_packet(Arc::clone(&packet)).await?;
+                    client.send_voice_packet(self.clone()).await?;
 
                     return Ok(());
                 }
@@ -99,11 +98,11 @@ impl Handler for VoicePacket<ClientBound> {
                             return;
                         }
 
-                        match cl.publisher.try_send(ClientMessage::SendVoicePacket(Arc::clone(&packet))) {
+                        match cl.publisher.try_send(ClientMessage::SendVoicePacket(self.clone())) {
                             Ok(_) => {}
                             Err(TrySendError::Closed(_)) => {
                                 let session_id = cl.session_id;
-                                let state = Arc::clone(&state);
+                                let state = Arc::clone(state);
                                 // If we don't have a channel then we should drop the client as the receiving part of the channel got canceled
                                 // TODO: have a queue wrapper for state
                                 tokio::spawn(async move {
