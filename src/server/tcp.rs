@@ -94,6 +94,7 @@ pub async fn create_tcp_server(
     }
 }
 
+// TODO: Should this not just be in the state struct
 async fn handle_new_client(
     mut tls_stream: TlsStream<TcpStream>,
     peer_ip: IpAddr,
