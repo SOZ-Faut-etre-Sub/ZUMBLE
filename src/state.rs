@@ -355,10 +355,10 @@ impl ServerState {
         let mut channel = None;
 
         {
-            let client_entry = self.clients.get_async(&client_session).await;
+            let guard = Guard::new();
+            let client = self.clients.peek(&client_session, &guard);
 
-            if let Some(client_entry) = client_entry {
-                let client = client_entry.get();
+            if let Some(client) = client {
                 crate::metrics::CLIENTS_TOTAL.dec();
                 tracing::info!("Removing client {} with reason {:?}", client, disconnect_reason);
 
@@ -372,12 +372,12 @@ impl ServerState {
                 // This is required due to the fact that `HashIndex` doesn't guarantee a stable
                 // garbage collection, so we can have a client exist for a long time afterwards
                 // which will cause their socket to not close until we eventually hit GC
-                {
-                    let mut client = client.write.lock().await;
-                    // If we fail to shut down we likely can't do anything about it, we should just
-                    // ignore it.
-                    let _ = client.shutdown().await;
-                }
+                let client_shutdown = Arc::clone(client);
+                tokio::task::spawn(async move {
+                    let mut client = client_shutdown.write.lock().await;
+                    // If we failed to shut down we can just ignore it, we don't care
+                    client.shutdown().await
+                });
 
 
                 let socket = client.udp_socket_addr.swap(None);
