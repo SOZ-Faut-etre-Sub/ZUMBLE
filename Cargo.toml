@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 aes = "0.8.4"
 anyhow = "1.0.93"
-async-trait = "0.1.83"
+# TODO: Update to https://github.com/RustCrypto/block-modes
 block-modes = "0.9.1"
 bytes = "1.9.0"
 byteorder = "1.5.0"
@@ -34,6 +34,7 @@ parking_lot = "0.12.3"
 arc-swap = "1.7.1"
 crossbeam = "0.8.4"
 axum = { version = "0.7.9", features = ["macros"] }
+# TODO update whenever axum-server and axum-auth go to 0.8.1
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 axum-auth = "0.7.0"
 tokio-util = "0.7.13"

@@ -1643,7 +1643,6 @@ dependencies = [
  "aes",
  "anyhow",
  "arc-swap",
- "async-trait",
  "axum",
  "axum-auth",
  "axum-server",
