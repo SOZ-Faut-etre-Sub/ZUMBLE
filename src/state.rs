@@ -366,8 +366,19 @@ impl ServerState {
                 // reader part of the TCP stream
                 client.cancel_token.cancel();
 
-                // swap the write part of the socket with nothing, dropping the writer
-                client.write.swap(None);
+                // Shut down our writer whenever we get disconnected, allowing for the TCP stream
+                // to shut down
+                //
+                // This is required due to the fact that `HashIndex` doesn't guarantee a stable
+                // garbage collection, so we can have a client exist for a long time afterwards
+                // which will cause their socket to not close until we eventually hit GC
+                let client_shutdown = Arc::clone(client);
+                tokio::task::spawn(async move {
+                    let mut client_writer = client_shutdown.write.lock().await;
+
+                    // take the writer so we can drop it
+                    client_writer.take();
+                });
 
 
                 let socket = client.udp_socket_addr.swap(None);
