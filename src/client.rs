@@ -40,7 +40,7 @@ pub struct Client {
     pub channel_id: AtomicU32,
     pub mute: AtomicBool,
     pub deaf: AtomicBool,
-    pub write: Mutex<WriteHalf<TlsStream<TcpStream>>>,
+    pub write: ArcSwapOption<Mutex<WriteHalf<TlsStream<TcpStream>>>>,
     // pub tokens: Vec<String>,
     pub crypt_state: Mutex<CryptState>,
     pub udp_socket_addr: ArcSwapOption<SocketAddr>,
@@ -114,7 +114,7 @@ impl Client {
             name: Arc::new(authenticate.get_username().to_string()),
             channel_id: AtomicU32::new(channel_id),
             crypt_state: Mutex::new(crypt_state),
-            write: Mutex::new(write),
+            write: ArcSwapOption::new(Some(Arc::new(Mutex::new(write)))),
             // tokens,
             deaf: AtomicBool::new(false),
             mute: AtomicBool::new(false),
@@ -143,26 +143,29 @@ impl Client {
 
     pub async fn send(&self, data: &[u8]) -> Result<(), MumbleError> {
         // if our cancel token gets called mid write we should abort out of our write with an error
-        tokio::select! {
-             _ = self.cancel_token.cancelled() => {
-                 Err(MumbleError::WritterShutDown)
-             }
-             mut writer_lock = self.write.lock() => {
-                 tokio::select! {
-                     _ = self.cancel_token.cancelled() => {
-                         Err(MumbleError::WritterShutDown)
-                     }
-                     res = writer_lock.write_all(data) => {
-                         match res {
-                            Ok(_bytes) => Ok(()),
-                            Err(e) => Err(e.into()),
+        if let Some(writer) = self.write.load_full() {
+            tokio::select! {
+                _ = self.cancel_token.cancelled() => {
+                    return Err(MumbleError::WritterShutDown)
+                }
+                mut writer_lock = writer.lock() => {
+                    tokio::select! {
+                        _ = self.cancel_token.cancelled() => {
+                            return Err(MumbleError::WritterShutDown)
+                        }
+                        res = writer_lock.write_all(data) => {
+                            return match res {
+                                Ok(_bytes) => Ok(()),
+                                Err(e) => Err(e.into()),
+                            }
+                        }
 
-                         }
-                     }
-
-                 }
-             }
+                    }
+                }
+            }
         }
+
+        Err(MumbleError::WritterShutDown)
     }
 
     pub fn is_muted(&self) -> bool {
