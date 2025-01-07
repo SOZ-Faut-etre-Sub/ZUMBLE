@@ -140,6 +140,8 @@ impl MessageHandler {
                 tokio::select! {
                     _ = token.cancelled() => {
                         tracing::info!("TCP Client {} dropped", client);
+                        // TODO: Remove if testing shows thi still leaks
+                        drop(stream);
                         return Ok(())
                     }
                     kind = stream.read_u16() => {
@@ -150,6 +152,8 @@ impl MessageHandler {
                                 // prevent the client from starving the thread  if it has gotten into a bad state
                                 let bad_count = client.bad_tcp_count.fetch_add(1, Ordering::Relaxed);
                                 if bad_count > 20 {
+                                    // TODO: Remove if testing shows thi still leaks
+                                   drop(stream);
                                    return Err(anyhow!("Client had too many bad TCP requests, dropping."))
                                 }
                             }
