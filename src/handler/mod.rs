@@ -179,14 +179,17 @@ impl MessageHandler {
                     }
                     consumer_packet = consumer.recv() => {
                         let consumer = match consumer_packet {
-                            Some(ClientMessage::RouteVoicePacket(packet)) => packet.handle(state, client).await,
-                            Some(ClientMessage::SendVoicePacket(packet)) => client.send_voice_packet(packet).await.map_err(anyhow::Error::new),
-                            Some(ClientMessage::SendMessage { kind, payload }) => client.send(payload.as_ref()).await.map_err(anyhow::Error::new),
+                            Some(ClientMessage::RouteVoicePacket(packet)) => packet.handle(state, client).await.map_err(|e| anyhow!("{} failed to RouteVoicePacket, got error {e}", client)),
+                            Some(ClientMessage::SendVoicePacket(packet)) => client.send_voice_packet(packet).await.map_err(|e| anyhow!("{} failed to SendVoicePacket, got error {e}", client)),
+                            Some(ClientMessage::SendMessage { kind, payload }) => client
+                                .send(payload.as_ref())
+                                .await
+                                .map_err(|e| anyhow!("{} failed to SendMessage {kind} size {}, got error {e}", client, payload.len())),
                             _ => Ok(()),
                         };
 
                         if let Err(e) = consumer {
-                            tracing::error!("UDP call failed with: {}", e);
+                            tracing::error!("UDP: call failed with: {}", e);
                         }
                     }
                 }
