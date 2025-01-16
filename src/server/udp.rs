@@ -150,9 +150,9 @@ async fn handle_packet(
                 (client, packet)
             } else {
                 // don't log if we've done it recently
-                // if let Ok(Some((_, _))) = state.logs.put(addr, ()) {
-                tracing::error!("unknown client from address {}", addr);
-                // }
+                if let Ok(Some((_, _))) = state.logs.put(addr, ()) {
+                    tracing::error!("unknown client from address {}", addr);
+                }
 
                 crate::metrics::UNKNOWN_MESSAGES_TOTAL
                     .with_label_values(&["udp", "input", "UnknownPackets"])
