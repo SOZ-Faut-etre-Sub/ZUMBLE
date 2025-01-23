@@ -14,7 +14,7 @@ use scc::HashCache;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use tokio::io::{AsyncWriteExt, WriteHalf};
+use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
 use tokio_rustls::server::TlsStream;
@@ -75,7 +75,7 @@ pub struct ServerState {
 impl ServerState {
     pub fn new(socket: Arc<UdpSocket>) -> Self {
         let channels = ConcurrentHashMap::new();
-        channels.insert(0, Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false));
+        let _ = channels.insert(0, Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false));
 
         Self {
             // we preallocate the maximum amount of clients to prevent the possibility of resizes
@@ -140,7 +140,8 @@ impl ServerState {
 
         tracing::debug!("Created channel {} with name {}", channel_id, state.get_name().to_string());
 
-        self.channels.insert(channel_id, Arc::clone(&channel));
+        // this should already be checked prior to us creating the channel
+        let _ = self.channels.insert(channel_id, Arc::clone(&channel));
 
         channel
     }
@@ -270,8 +271,7 @@ impl ServerState {
         self.clients_by_socket
             .get_async(socket_addr)
             .await
-            .map(|client| client.get().upgrade())
-            .flatten()
+            .and_then(|client| client.get().upgrade())
     }
 
     pub fn remove_client_by_socket(&self, socket_addr: &SocketAddr) -> bool {
@@ -306,7 +306,6 @@ impl ServerState {
                         tracing::debug!("failed to decrypt packet: {:?}, continue to next client", err);
                     }
                 }
-
             }
 
             iter = client.next_async().await;
@@ -380,7 +379,6 @@ impl ServerState {
                     client_writer.take();
                 });
 
-
                 let socket = client.udp_socket_addr.swap(None);
                 // let mut should_remove = false;
 
@@ -406,7 +404,6 @@ impl ServerState {
             self.broadcast_client_delete(client_session, channel_id).await;
         }
         self.cleanup_client_by_session(client_session);
-
     }
 
     async fn broadcast_client_delete(&self, client_id: u32, channel_id: u32) {
@@ -440,7 +437,6 @@ impl ServerState {
 
         while self.channels.contains(&channel_id) {
             channel_id = self.channel_count.fetch_add(1, Ordering::SeqCst);
-
         }
 
         channel_id

@@ -1,7 +1,7 @@
-use crate::{error::DecryptError, varint::ReadExt};
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
 use crate::voice::VoicePacket;
+use crate::{error::DecryptError, varint::ReadExt};
 
 use anyhow::anyhow;
 
@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::constants::{MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
 
-pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef, cancel_token: CancellationToken) {
+pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef, _cancel_token: CancellationToken) {
     loop {
         match udp_server_run(protocol_version, socket.clone(), state.clone()).await {
             Ok(_) => (),
@@ -187,7 +187,6 @@ async fn handle_packet(
                 crypt.encrypt(&client_packet, &mut dest);
             }
 
-
             client.last_udp_ping.store(Instant::now());
             let buf = &dest.freeze()[..];
 
@@ -214,7 +213,6 @@ async fn handle_packet(
             crate::metrics::MESSAGES_BYTES
                 .with_label_values(&["udp", "input", "VoicePacket"])
                 .inc_by(size as u64);
-
 
             let send_client_packet = { client.publisher.try_send(ClientMessage::RouteVoicePacket(client_packet)) };
 

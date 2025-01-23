@@ -164,7 +164,7 @@ async fn main() {
         tracing::info!("http server not started, no auth password provided");
     }
 
-    while let Some(_) = set.join_next().await {}
+    while set.join_next().await.is_some() {}
 }
 
 fn generate_rustls_cert() -> ServerConfig {

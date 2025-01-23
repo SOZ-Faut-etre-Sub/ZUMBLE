@@ -63,14 +63,14 @@ impl MessageHandler {
 
         let message_kind = MessageKind::try_from(kind)?;
 
-        if size > 1024 {
-            tracing::warn!(
-                "{} is reading a packet that is very large, got size {}, max expected 1024! MessageKind: {message_kind} {:?}",
-                client,
-                size,
-                buf
-            );
-        }
+        // if size > 1024 {
+        //     tracing::warn!(
+        //         "{} is reading a packet that is very large, got size {}, max expected 1024! MessageKind: {message_kind} {:?}",
+        //         client,
+        //         size,
+        //         buf
+        //     );
+        // }
 
         crate::metrics::MESSAGES_TOTAL
             .with_label_values(&["tcp", "input", message_kind.to_string().as_str()])
@@ -148,7 +148,7 @@ impl MessageHandler {
                         let handle_read = Self::handle_stream_read::<S>(kind, &mut stream, state, client).await;
                         match handle_read {
                             Ok(()) => (),
-                            Err(e) => {
+                            Err(_e) => {
                                 // prevent the client from starving the thread  if it has gotten into a bad state
                                 let bad_count = client.bad_tcp_count.fetch_add(1, Ordering::Relaxed);
                                 if bad_count > 20 {
