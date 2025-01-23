@@ -8,7 +8,7 @@ pub type ChannelRef = Arc<Channel>;
 
 pub struct Channel {
     pub id: u32,
-    pub parent_id: Option<u32>,
+    // pub parent_id: Option<u32>,
     pub name: String,
     // unused, the client will get this via ChannelState anyways
     // pub description: String,
@@ -36,7 +36,7 @@ impl Channel {
         Arc::new(Self {
             id,
             channel_state_cache: Arc::new(state),
-            parent_id,
+            // parent_id,
             name,
             // description,
             temporary,
@@ -49,9 +49,9 @@ impl Channel {
         Arc::clone(&self.channel_state_cache)
     }
 
-    pub fn get_listeners(&self) -> &ConcurrentHashMap<u32, ClientArc> {
-        &self.listeners
-    }
+    // pub fn get_listeners(&self) -> &ConcurrentHashMap<u32, ClientArc> {
+    //     &self.listeners
+    // }
 
     pub fn get_clients(&self) -> &ConcurrentHashMap<u32, ClientArc> {
         &self.clients

@@ -13,8 +13,6 @@ pub enum MumbleError {
     Parse(#[from] protobuf::ProtobufError),
     #[error("voice decrypt error: {0}")]
     Decrypt(#[from] DecryptError),
-    #[error("Client Forcefully disconnected from server")]
-    ForceDisconnect,
     #[error("send message error: {0}")]
     SendError(#[from] tokio::sync::mpsc::error::SendTimeoutError<ClientMessage>),
     #[error("invalid voice target id")]

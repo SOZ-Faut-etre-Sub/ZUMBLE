@@ -10,7 +10,6 @@ use crate::voice::{encode_voice_packet, ClientBound, VoicePacket};
 use arc_swap::ArcSwapOption;
 use bytes::BytesMut;
 use crossbeam::atomic::AtomicCell;
-use protobuf::reflect::ProtobufValue;
 use protobuf::Message;
 use scc::ebr::Guard;
 use std::fmt::Display;
@@ -93,6 +92,7 @@ impl Client {
         Ok((version, authenticate, crypt))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         _version: Version,
         authenticate: Authenticate,
