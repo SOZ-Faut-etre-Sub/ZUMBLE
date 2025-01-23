@@ -1,9 +1,9 @@
 use rustls::ServerConfig;
 
-#[cfg(not(target_env = "msvc"))]
+#[cfg(not(target_os = "windows"))]
 use tikv_jemallocator::Jemalloc;
 
-#[cfg(not(target_env = "msvc"))]
+#[cfg(not(target_os = "windows"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
