@@ -150,7 +150,7 @@ impl MessageHandler {
                             Ok(()) => (),
                             Err(_e) => {
                                 // prevent the client from starving the thread  if it has gotten into a bad state
-                                let bad_count = client.bad_tcp_count.fetch_add(1, Ordering::Relaxed);
+                                let bad_count = client.bad_net_count.fetch_add(1, Ordering::Relaxed);
                                 if bad_count > 20 {
                                     // TODO: Remove if testing shows thi still leaks
                                    drop(stream);
@@ -190,6 +190,11 @@ impl MessageHandler {
 
                         if let Err(e) = consumer {
                             tracing::error!("UDP: call failed with: {}", e);
+
+                            let bad_count = client.bad_net_count.fetch_add(1, Ordering::Relaxed);
+                            if bad_count > 20 {
+                               return Err(anyhow!("Client had too many bad UDP requests, dropping."))
+                            }
                         }
                     }
                 }

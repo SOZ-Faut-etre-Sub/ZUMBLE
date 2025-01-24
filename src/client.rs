@@ -51,7 +51,7 @@ pub struct Client {
     pub last_tcp_ping: AtomicCell<Instant>,
     pub last_udp_ping: AtomicCell<Instant>,
     // the amount of bad tcp messages the client has sent, after 20 the client will be dropped automatically
-    pub bad_tcp_count: AtomicU32,
+    pub bad_net_count: AtomicU32,
 }
 
 impl Display for Client {
@@ -126,7 +126,7 @@ impl Client {
             targets,
             last_tcp_ping: AtomicCell::new(Instant::now()),
             last_udp_ping: AtomicCell::new(Instant::now()),
-            bad_tcp_count: AtomicU32::new(0),
+            bad_net_count: AtomicU32::new(0),
         })
     }
 
