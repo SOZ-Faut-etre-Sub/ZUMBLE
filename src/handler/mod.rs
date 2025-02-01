@@ -185,7 +185,7 @@ impl MessageHandler {
                                 .send(payload.as_ref())
                                 .await
                                 .map_err(|e| anyhow!("{} failed to SendMessage {kind} size {}, got error {e}", client, payload.len())),
-                            _ => Ok(()),
+                            None => Err(anyhow!("{} consumer packet was None, this shouldn't happen.", client)),
                         };
 
                         if let Err(e) = consumer {
