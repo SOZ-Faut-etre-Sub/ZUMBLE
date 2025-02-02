@@ -103,9 +103,9 @@ async fn handle_packet(
         Some(client) => {
             // Send decrypt packet
 
-            let decrypt_result = {
+            let (decrypt_result, last_good) = {
                 let mut crypt_state = client.crypt_state.lock().await;
-                crypt_state.decrypt(&mut buffer)
+                (crypt_state.decrypt(&mut buffer), crypt_state.last_good)
             };
 
             match decrypt_result {
@@ -130,6 +130,9 @@ async fn handle_packet(
                         DecryptError::Repeat => false,
                         _ => true,
                     };
+
+                    // if we haven't gotten a good packet for 5 seconds then we should reset the clients crypt
+                    let restart_crypt = restart_crypt || Instant::now().duration_since(last_good).as_secs() > 5;
 
                     if restart_crypt {
                         tracing::error!("client {} udp decrypt error: {}, reset crypt setup", client, err);
