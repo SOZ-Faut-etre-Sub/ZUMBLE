@@ -100,7 +100,7 @@ impl Handler for VoicePacket<ClientBound> {
 
                         match cl.publisher.try_send(ClientMessage::SendVoicePacket(self.clone())) {
                             Ok(_) => {}
-                            Err(TrySendError::Closed(_)) => {
+                            Err(TrySendError::Closed(_) | TrySendError::Full(_)) => {
                                 let session_id = cl.session_id;
                                 let state = Arc::clone(state);
                                 // If we don't have a channel then we should drop the client as the receiving part of the channel got canceled
@@ -108,9 +108,6 @@ impl Handler for VoicePacket<ClientBound> {
                                 tokio::spawn(async move {
                                     state.disconnect(session_id, DisconnectReason::LostReceivingChannel).await;
                                 });
-                            }
-                            Err(err) => {
-                                tracing::error!("error sending voice packet message to {}: {}", cl, err);
                             }
                         }
                     }
