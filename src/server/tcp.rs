@@ -1,4 +1,5 @@
 use std::net::IpAddr;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use crate::client::{Client, ClientArc};
@@ -11,6 +12,7 @@ use crate::server::constants::{MAX_BANDWIDTH_IN_BYTES, MAX_CLIENTS};
 use crate::state::ServerStateRef;
 use anyhow::Context;
 use futures::TryFutureExt;
+use regex::Regex;
 use tokio::io::{self};
 use tokio::io::{AsyncWriteExt, ReadHalf};
 use tokio::net::{TcpListener, TcpStream};
@@ -102,11 +104,24 @@ async fn handle_new_client(
     state: ServerStateRef,
 ) -> Result<(), anyhow::Error> {
     let (version, authenticate, crypt_state) = Client::init(&mut tls_stream, server_version).await.context("init client")?;
+    let version_release = version.get_release();
+    let username = authenticate.get_username().to_string();
+    
+    static USERNAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[\d+\].*$").unwrap());
+    if !version_release.to_lowercase().contains("citizenfx") ||  !USERNAME_REGEX.is_match(&username) {
+        tracing::warn!(
+            "User '{}' connected with unofficial client '{}' from {}",
+            username,
+            version_release,
+            peer_ip
+        );
+
+        return Err(anyhow::anyhow!("Disconnecting unofficial client username: {}", username));
+    }
 
     let (read, write) = io::split(tls_stream);
     let (tx, rx) = mpsc::channel(MAX_BANDWIDTH_IN_BYTES);
-
-    let username = authenticate.get_username().to_string();
+    
     let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip);
 
     tracing::info!("TCP new client {} connected {}", username, peer_ip);
