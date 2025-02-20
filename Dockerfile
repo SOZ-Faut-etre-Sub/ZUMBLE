@@ -6,17 +6,17 @@ RUN apt update && apt install -y git bash make gcc linux-libc-dev patch musl mus
 
 RUN rustup target add x86_64-unknown-linux-musl
 
-COPY . /zumble-build
+COPY . /rumble-build
 
-WORKDIR /zumble-build
+WORKDIR /rumble-build
 
 RUN --mount=type=cache,target=/usr/local/cargo,from=rust,source=/usr/local/cargo \
     --mount=type=cache,target=target \
-    cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/zumble /zumble
+    cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/rust-mumble /rust-mumble
 
 FROM scratch
 
-COPY --from=builder /zumble /zumble
+COPY --from=builder /rust-mumble /rust-mumble
 
 EXPOSE 64738/udp
 EXPOSE 64738/tcp
@@ -24,4 +24,4 @@ EXPOSE 8080/tcp
 
 ENV RUST_LOG=info
 
-CMD ["/zumble"] # Password should be passed via args
+CMD ["/rust-mumble"] # Password should be passed via args
