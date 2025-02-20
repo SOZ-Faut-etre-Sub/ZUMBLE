@@ -1,4 +1,4 @@
-FROM rust:1.85.0 as builder
+FROM rustlang/rust:nightly as builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
