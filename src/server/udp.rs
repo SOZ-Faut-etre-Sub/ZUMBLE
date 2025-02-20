@@ -148,7 +148,7 @@ async fn handle_packet(
         }
         None => {
             if let Some((client, packet)) = state.find_client_with_decrypt(&mut buffer, addr).await? {
-                tracing::info!("UPD connected client {} on {}", client, addr);
+                tracing::info!("UDP connected client {} on {}", client, addr);
 
                 (client, packet)
             } else {
