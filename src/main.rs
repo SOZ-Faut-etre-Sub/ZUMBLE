@@ -81,7 +81,7 @@ struct Args {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     // let console_layer = console_subscriber::spawn();
     tracing_subscriber::fmt::init();
