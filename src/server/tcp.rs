@@ -6,8 +6,8 @@ use crate::client::{Client, ClientArc};
 use crate::error::DisconnectReason;
 use crate::handler::MessageHandler;
 use crate::message::ClientMessage;
-use crate::proto::mumble::Version;
 use crate::proto::MessageKind;
+use crate::proto::mumble::Version;
 use crate::server::constants::{MAX_BANDWIDTH_IN_BYTES, MAX_CLIENTS};
 use crate::state::ServerStateRef;
 use anyhow::Context;
@@ -18,7 +18,7 @@ use tokio::io::{AsyncWriteExt, ReadHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
-use tokio_rustls::{server::TlsStream, TlsAcceptor};
+use tokio_rustls::{TlsAcceptor, server::TlsStream};
 
 pub async fn create_tcp_server(
     tcp_listener: TcpListener,
@@ -106,9 +106,9 @@ async fn handle_new_client(
     let (version, authenticate, crypt_state) = Client::init(&mut tls_stream, server_version).await.context("init client")?;
     let version_release = version.get_release();
     let username = authenticate.get_username().to_string();
-    
+
     static USERNAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[\d+\].*$").unwrap());
-    if !version_release.to_lowercase().contains("citizenfx") ||  !USERNAME_REGEX.is_match(&username) {
+    if !version_release.to_lowercase().contains("citizenfx") || !USERNAME_REGEX.is_match(&username) {
         tracing::warn!(
             "User '{}' connected with unofficial client '{}' from {}",
             username,
@@ -121,7 +121,7 @@ async fn handle_new_client(
 
     let (read, write) = io::split(tls_stream);
     let (tx, rx) = mpsc::channel(MAX_BANDWIDTH_IN_BYTES);
-    
+
     let client = state.add_client(version, authenticate, crypt_state, write, tx, peer_ip);
 
     tracing::info!("TCP new client {} connected {}", username, peer_ip);

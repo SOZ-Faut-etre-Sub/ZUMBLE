@@ -2,13 +2,13 @@ use crate::crypt::CryptState;
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UDPTunnel, UserState, Version};
-use crate::proto::{expected_message, message_to_bytes, send_message, MessageKind};
+use crate::proto::{MessageKind, expected_message, get_mumble_buffer, message_to_bytes, send_message};
 use crate::server::constants::MAX_BANDWIDTH_IN_BITS;
 use crate::state::ServerStateRef;
 use crate::target::VoiceTarget;
-use crate::voice::{encode_voice_packet, ClientBound, VoicePacket};
+use crate::voice::{ClientBound, VoicePacket, encode_voice_packet};
 use arc_swap::ArcSwapOption;
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use crossbeam::atomic::AtomicCell;
 use protobuf::Message;
 use scc::ebr::Guard;
@@ -19,8 +19,8 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::{TcpStream, UdpSocket};
-use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc::Sender;
 use tokio::time::timeout;
 use tokio_rustls::server::TlsStream;
 use tokio_util::sync::CancellationToken;
@@ -207,6 +207,24 @@ impl Client {
         Ok(())
     }
 
+    pub async fn send_message_raw(&self, kind: MessageKind, buffer: Bytes) -> Result<(), MumbleError> {
+        tracing::trace!("[{}] [{}] send message: {:?}", self.name, self.session_id, kind);
+
+        let bytes = get_mumble_buffer(kind, &buffer.to_vec());
+
+        self.send(bytes.as_ref()).await?;
+
+        crate::metrics::MESSAGES_TOTAL
+            .with_label_values(&["tcp", "output", kind.to_string().as_str()])
+            .inc();
+
+        crate::metrics::MESSAGES_BYTES
+            .with_label_values(&["tcp", "output", kind.to_string().as_str()])
+            .inc_by(bytes.len() as u64);
+
+        Ok(())
+    }
+
     /// removes the udp socket from the client and returns it to the caller
     pub fn remove_udp_socket(&self) -> Option<Arc<SocketAddr>> {
         // swap the udp socket address for none so we don't keep a copy
@@ -322,10 +340,7 @@ impl Client {
         encode_voice_packet(&packet, &mut data);
         let bytes = data.freeze();
 
-        let mut tunnel_message = UDPTunnel::default();
-        tunnel_message.set_packet(bytes.to_vec());
-
-        self.send_message(MessageKind::UDPTunnel, &tunnel_message).await
+        self.send_message_raw(MessageKind::UDPTunnel, bytes).await
     }
 
     pub fn update(&self, state: &UserState) {
