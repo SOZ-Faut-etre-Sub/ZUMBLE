@@ -77,7 +77,9 @@ struct Args {
     /// Path to the certificate file for the TLS certificate
     #[clap(long, value_parser, default_value = "cert.pem")]
     cert: String,
-    /// Restricts the client release to the specified name, such as CitizenFX
+    /// Restricts the clients release name to a specific version, useful for providing a stop-gap
+    /// if you want to stop external clients from joining, setting to `CitizenFX` will only allow
+    /// clients with the CitizenFX mumble client to join.
     #[clap(short, long, value_parser, default_value = None)]
     restrict_to_version: Option<String>,
 }
@@ -90,6 +92,10 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
+
+    if let Some(restrict) = &args.restrict_to_version {
+        tracing::info!("Restricting client version to {}", restrict);
+    }
 
     let config = Arc::new(generate_rustls_cert());
 

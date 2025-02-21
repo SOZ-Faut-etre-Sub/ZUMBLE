@@ -9,7 +9,7 @@ use crate::server::constants::{ConcurrentHashMap, MAX_CLIENTS};
 use crate::voice::{ServerBound, VoicePacket};
 use bytes::BytesMut;
 use protobuf::Message;
-use scc::HashCache;
+// use scc::HashCache;
 use scc::ebr::Guard;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;

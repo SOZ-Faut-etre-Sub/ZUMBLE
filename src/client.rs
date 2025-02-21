@@ -1,7 +1,7 @@
 use crate::crypt::CryptState;
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
-use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UDPTunnel, UserState, Version};
+use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UserState, Version};
 use crate::proto::{MessageKind, expected_message, get_mumble_buffer, message_to_bytes, send_message};
 use crate::server::constants::MAX_BANDWIDTH_IN_BITS;
 use crate::state::ServerStateRef;
