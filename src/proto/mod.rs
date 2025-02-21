@@ -106,14 +106,19 @@ impl TryFrom<u16> for MessageKind {
     }
 }
 
-pub fn message_to_bytes<T: Message>(kind: MessageKind, message: &T) -> Result<Bytes, MumbleError> {
-    let bytes = message.write_to_bytes()?;
+pub fn get_mumble_buffer(kind: MessageKind, bytes: &Vec<u8>) -> Bytes {
     let mut buffer = BytesMut::new();
     buffer.put_u16(kind as u16);
     buffer.put_u32(bytes.len() as u32);
     buffer.put_slice(&bytes);
 
-    Ok(buffer.freeze())
+    buffer.freeze()
+}
+
+pub fn message_to_bytes<T: Message>(kind: MessageKind, message: &T) -> Result<Bytes, MumbleError> {
+    let bytes = message.write_to_bytes()?;
+
+    Ok(get_mumble_buffer(kind, &bytes))
 }
 
 pub async fn send_message<T: Message, S: AsyncWrite + Unpin>(kind: MessageKind, message: &T, stream: &mut S) -> Result<(), MumbleError> {
