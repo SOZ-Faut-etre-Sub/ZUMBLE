@@ -11,16 +11,16 @@ mod voice_target;
 // use anyhow::anyhow;
 
 use anyhow::anyhow;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use crate::client::ClientArc;
 use crate::error::MumbleError;
 use crate::message::ClientMessage;
-use crate::proto::mumble;
 use crate::proto::MessageKind;
+use crate::proto::mumble;
 use crate::state::ServerStateRef;
-use crate::voice::{decode_voice_packet, ServerBound};
+use crate::voice::{ServerBound, decode_voice_packet};
 use anyhow::Context;
 use bytes::BytesMut;
 use protobuf::Message;

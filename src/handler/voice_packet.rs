@@ -1,5 +1,5 @@
-use scc::ebr::Guard;
 use scc::HashMap;
+use scc::ebr::Guard;
 use tokio::sync::mpsc::error::TrySendError;
 
 use crate::client::{ClientArc, WeakClient};
@@ -7,8 +7,8 @@ use crate::error::DisconnectReason;
 use crate::message::ClientMessage;
 use crate::state::ServerStateRef;
 use crate::voice::{ClientBound, VoicePacket};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use super::{Handler, MumbleResult};
 

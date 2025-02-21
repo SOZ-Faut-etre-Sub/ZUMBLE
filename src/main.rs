@@ -35,16 +35,16 @@ use crate::state::ServerState;
 
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
-use rcgen::{date_time_ymd, CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P384_SHA384};
+use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P384_SHA384, date_time_ymd};
 use rustls::crypto::{self, CryptoProvider};
-use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::PrivateKeyDer;
+use rustls_pki_types::pem::PemObject;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::task::JoinSet;
-use tokio_rustls::rustls::{self};
 use tokio_rustls::TlsAcceptor;
+use tokio_rustls::rustls::{self};
 use tokio_util::sync::CancellationToken;
 
 /// Zumble, a mumble server implementation for FiveM

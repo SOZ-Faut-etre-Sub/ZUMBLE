@@ -7,9 +7,9 @@ mod status;
 use std::sync::Arc;
 
 use axum::{
+    Router,
     middleware::from_fn_with_state,
     routing::{get, post},
-    Router,
 };
 use axum_auth_wrapper::auth_basic;
 use deaf::{get_deaf, post_deaf};

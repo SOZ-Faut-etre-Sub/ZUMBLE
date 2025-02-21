@@ -1,9 +1,9 @@
 use crate::error::DecryptError;
 use crate::proto::mumble::CryptSetup;
-use crate::voice::{decode_voice_packet, encode_voice_packet, VoicePacket, VoicePacketDst};
+use crate::voice::{VoicePacket, VoicePacketDst, decode_voice_packet, encode_voice_packet};
+use aes::Aes128;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
-use aes::Aes128;
 use bytes::BytesMut;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::time::Instant;
