@@ -1,5 +1,5 @@
 use std::net::IpAddr;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use crate::client::{Client, ClientArc};
@@ -40,6 +40,8 @@ pub async fn create_tcp_server(
 
         let server_version = server_version.clone();
         let state = state.clone();
+
+        let restrict_to_version = state.restrict_to_version.clone();
 
         let cur_clients = state.clients.len();
         let addr = tcp_stream.peer_addr()?;
@@ -91,7 +93,7 @@ pub async fn create_tcp_server(
                 (Err(e), _) => return Err(e),
             };
 
-            handle_new_client(tls_stream, peer_ip, server_version, state).await
+            handle_new_client(tls_stream, peer_ip, server_version, restrict_to_version, state).await
         });
     }
 }
@@ -101,6 +103,7 @@ async fn handle_new_client(
     mut tls_stream: TlsStream<TcpStream>,
     peer_ip: IpAddr,
     server_version: Version,
+    restrict_to_version: Arc<Option<String>>,
     state: ServerStateRef,
 ) -> Result<(), anyhow::Error> {
     let (version, authenticate, crypt_state) = Client::init(&mut tls_stream, server_version).await.context("init client")?;
@@ -108,15 +111,18 @@ async fn handle_new_client(
     let username = authenticate.get_username().to_string();
 
     static USERNAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[\d+\].*$").unwrap());
-    if !version_release.to_lowercase().contains("citizenfx") || !USERNAME_REGEX.is_match(&username) {
-        tracing::warn!(
-            "User '{}' connected with unofficial client '{}' from {}",
-            username,
-            version_release,
-            peer_ip
-        );
 
-        return Err(anyhow::anyhow!("Disconnecting unofficial client username: {}", username));
+    if let Some(restrict_to) = restrict_to_version.as_ref() {
+        if !version_release.to_lowercase().contains(restrict_to) || !USERNAME_REGEX.is_match(&username) {
+            tracing::warn!(
+                "User '{}' connected with unofficial client '{}' from {}",
+                username,
+                version_release,
+                peer_ip
+            );
+
+            return Err(anyhow::anyhow!("Disconnecting unofficial client username: {}", username));
+        }
     }
 
     let (read, write) = io::split(tls_stream);

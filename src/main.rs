@@ -77,11 +77,14 @@ struct Args {
     /// Path to the certificate file for the TLS certificate
     #[clap(long, value_parser, default_value = "cert.pem")]
     cert: String,
+    /// Restricts the client release to the specified name, such as CitizenFX
+    #[clap(short, long, value_parser, default_value = None)]
+    restrict_to_version: Option<String>,
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() {
     // let console_layer = console_subscriber::spawn();
     tracing_subscriber::fmt::init();
@@ -114,7 +117,7 @@ async fn main() {
 
     let udp_socket = Arc::new(socket);
 
-    let state = Arc::new(ServerState::new(udp_socket.clone()));
+    let state = Arc::new(ServerState::new(udp_socket.clone(), args.restrict_to_version));
     let udp_state = state.clone();
 
     tracing::info!("tcp/udp server start listening on {}", args.listen);
