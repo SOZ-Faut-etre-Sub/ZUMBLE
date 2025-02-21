@@ -1,7 +1,7 @@
 use crate::client::ClientArc;
 use crate::handler::Handler;
-use crate::proto::mumble::Ping;
 use crate::proto::MessageKind;
+use crate::proto::mumble::Ping;
 use crate::state::ServerStateRef;
 use std::time::Instant;
 
@@ -24,9 +24,6 @@ impl Handler for Ping {
             ping.set_resync(crypt_state_read.resync);
         }
 
-        client
-            .send_message(MessageKind::Ping, &ping)
-            .await
-            .map_err(anyhow::Error::new)
+        client.send_message(MessageKind::Ping, &ping).await.map_err(anyhow::Error::new)
     }
 }

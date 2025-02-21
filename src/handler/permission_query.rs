@@ -1,7 +1,7 @@
 use crate::client::ClientArc;
 use crate::handler::Handler;
-use crate::proto::mumble::PermissionQuery;
 use crate::proto::MessageKind;
+use crate::proto::mumble::PermissionQuery;
 use crate::state::ServerStateRef;
 
 use super::MumbleResult;

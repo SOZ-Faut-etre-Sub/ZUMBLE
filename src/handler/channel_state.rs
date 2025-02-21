@@ -2,8 +2,8 @@ use anyhow::Error;
 
 use crate::client::ClientArc;
 use crate::handler::Handler;
-use crate::proto::mumble::ChannelState;
 use crate::proto::MessageKind;
+use crate::proto::mumble::ChannelState;
 use crate::state::ServerStateRef;
 
 use super::MumbleResult;

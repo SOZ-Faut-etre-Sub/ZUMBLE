@@ -35,13 +35,13 @@ impl Handler for VoiceTarget {
 
         for target_item in self.get_targets() {
             for session in target_item.get_session() {
-                tracing::debug!("{} is targeting session: {session}", client);
+                // tracing::debug!("{} is targeting session: {session}", client);
                 // we clear this above, we won't run into duplicate inserts.
                 let _ = target.sessions.insert_async(*session, ()).await;
             }
 
             if target_item.has_channel_id() {
-                tracing::debug!("{} is targeting channel: {}", client, target_item.get_channel_id());
+                // tracing::debug!("{} is targeting channel: {}", client, target_item.get_channel_id());
                 // we clear this above, we won't run into duplicate inserts.
                 let _ = target.channels.insert_async(target_item.get_channel_id(), ()).await;
             }
