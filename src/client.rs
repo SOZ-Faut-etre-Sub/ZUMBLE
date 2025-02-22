@@ -8,6 +8,7 @@ use crate::state::ServerStateRef;
 use crate::target::VoiceTarget;
 use crate::voice::{ClientBound, VoicePacket, encode_voice_packet};
 use arc_swap::ArcSwapOption;
+use atomic_float::AtomicF32;
 use bytes::{Bytes, BytesMut};
 use crossbeam::atomic::AtomicCell;
 use protobuf::Message;
@@ -30,11 +31,22 @@ pub type WeakClient = Weak<Client>;
 
 type VoiceTargetArray = [Arc<VoiceTarget>; 29];
 
+#[derive(Default)]
+pub struct NetStats {
+    pub udp_packets: AtomicU32,
+    pub tcp_packets: AtomicU32,
+    pub udp_ping_avg: AtomicF32,
+    pub udp_ping_var: AtomicF32,
+    pub tcp_ping_avg: AtomicF32,
+    pub tcp_ping_var: AtomicF32
+}
+
 pub struct Client {
     // pub version: Version,
     name: Arc<String>,
     pub log_name: Arc<String>,
     pub authenticate: Authenticate,
+    pub net_stats: NetStats,
     pub session_id: u32,
     pub channel_id: AtomicU32,
     pub mute: AtomicBool,
@@ -110,7 +122,7 @@ impl Client {
             // version,
             session_id,
             log_name: Arc::new(format!("{} [session id: {}]", authenticate.get_username(), session_id)),
-
+            net_stats: Default::default(),
             name: Arc::new(authenticate.get_username().to_string()),
             channel_id: AtomicU32::new(channel_id),
             crypt_state: Mutex::new(crypt_state),

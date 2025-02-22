@@ -7,6 +7,7 @@ mod user_state;
 mod version;
 mod voice_packet;
 mod voice_target;
+mod user_stats;
 
 // use anyhow::anyhow;
 
@@ -115,6 +116,9 @@ impl MessageHandler {
             MessageKind::VoiceTarget => Self::try_handle::<mumble::VoiceTarget>(&buf, state, client)
                 .await
                 .context("kind: VoiceTarget"),
+            MessageKind::UserStats => Self::try_handle::<mumble::UserStats>(&buf, state, client)
+                .await
+                .context("kind: UserStats"),
             _ => {
                 tracing::warn!("unsupported message kind: {:?}", message_kind);
                 Err(anyhow!("Unsupported message kind: {}", message_kind))
