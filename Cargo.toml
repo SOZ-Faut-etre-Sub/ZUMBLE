@@ -39,6 +39,7 @@ axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 axum-auth = "0.7.0"
 tokio-util = "0.7.13"
 regex = "1.11.1"
+atomic_float = "1.1.0"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 tikv-jemallocator = "0.6"

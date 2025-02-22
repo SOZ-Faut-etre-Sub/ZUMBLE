@@ -28,6 +28,12 @@ pub struct CryptState {
     pub lost: u32,
     pub resync: u32,
     pub last_good: Instant,
+
+    // Remote -> client
+    pub remote_late: u32,
+    pub remote_good: u32,
+    pub remote_lost: u32,
+    pub remote_resync: u32,
 }
 
 impl Default for CryptState {
@@ -47,6 +53,11 @@ impl Default for CryptState {
             lost: 0,
             resync: 0,
             last_good: Instant::now(),
+
+            remote_late: 0,
+            remote_good: 0,
+            remote_lost: 0,
+            remote_resync: 0
         }
     }
 }
