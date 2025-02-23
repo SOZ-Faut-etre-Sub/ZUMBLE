@@ -1,11 +1,11 @@
 use crate::proto::MessageKind;
-use crate::voice::{Clientbound, VoicePacket};
+use crate::voice::{ClientBound, VoicePacket};
 use bytes::Bytes;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub enum ClientMessage {
-    RouteVoicePacket(VoicePacket<Clientbound>),
-    SendVoicePacket(VoicePacket<Clientbound>),
-    SendMessage { kind: MessageKind, payload: Bytes },
-    Disconnect,
+    RouteVoicePacket(VoicePacket<ClientBound>),
+    SendVoicePacket(VoicePacket<ClientBound>),
+    SendMessage { kind: MessageKind, payload: Arc<Bytes> },
 }

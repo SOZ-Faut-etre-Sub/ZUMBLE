@@ -1,9 +1,11 @@
-use crate::error::MumbleError;
-use crate::sync::RwLock;
-use crate::ServerState;
-use actix_web::{web, HttpResponse};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+
+use super::AppStateRef;
 
 #[derive(Serialize, Deserialize)]
 pub struct Deaf {
@@ -11,34 +13,31 @@ pub struct Deaf {
     user: String,
 }
 
-#[actix_web::post("/deaf")]
-pub async fn post_deaf(deaf: web::Json<Deaf>, state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
-    let client = { state.read_err().await?.get_client_by_name(deaf.user.as_str()).await? };
+// #[actix_web::post("/deaf")]
+pub async fn post_deaf(State(state): State<AppStateRef>, Json(deaf): Json<Deaf>) -> StatusCode {
+    let client = state.server.get_client_by_name(deaf.user.as_str()).await;
 
-    Ok(match client {
+    match client {
         Some(client) => {
-            client.write_err().await?.deaf(deaf.deaf);
+            client.set_deaf(deaf.deaf);
 
-            HttpResponse::Ok().finish()
+            StatusCode::OK
         }
-        None => HttpResponse::NotFound().finish(),
-    })
+        None => StatusCode::NOT_FOUND,
+    }
 }
 
-#[actix_web::get("/deaf/{user}")]
-pub async fn get_deaf(user: web::Path<String>, state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
-    let username = user.into_inner();
-    let client = { state.read_err().await?.get_client_by_name(username.as_str()).await? };
+// #[actix_web::get("/deaf/{user}")]
+pub async fn get_deaf(Path(username): Path<String>, State(state): State<AppStateRef>) -> Result<Json<Deaf>, StatusCode> {
+    println!("??");
+    if let Some(client) = state.server.get_client_by_name(username.as_str()).await {
+        let deaf = Deaf {
+            deaf: client.is_deaf(),
+            user: username,
+        };
 
-    Ok(match client {
-        Some(client) => {
-            let deaf = Deaf {
-                deaf: { client.read_err().await?.deaf },
-                user: username,
-            };
+        return Ok(Json(deaf));
+    }
 
-            HttpResponse::Ok().json(&deaf)
-        }
-        None => HttpResponse::NotFound().finish(),
-    })
+    Err(StatusCode::NOT_FOUND)
 }

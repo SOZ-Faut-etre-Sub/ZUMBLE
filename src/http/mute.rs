@@ -1,9 +1,11 @@
-use crate::error::MumbleError;
-use crate::sync::RwLock;
-use crate::ServerState;
-use actix_web::{web, HttpResponse};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+
+use super::AppStateRef;
 
 #[derive(Serialize, Deserialize)]
 pub struct Mute {
@@ -11,34 +13,26 @@ pub struct Mute {
     user: String,
 }
 
-#[actix_web::post("/mute")]
-pub async fn post_mute(mute: web::Json<Mute>, state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
-    let client = { state.read_err().await?.get_client_by_name(mute.user.as_str()).await? };
+pub async fn post_mute(State(state): State<AppStateRef>, Json(mute): Json<Mute>) -> StatusCode {
+    if let Some(client) = state.server.get_client_by_name(mute.user.as_str()).await {
+        client.set_mute(mute.mute);
 
-    Ok(match client {
-        Some(client) => {
-            client.write_err().await?.mute(mute.mute);
-
-            HttpResponse::Ok().finish()
-        }
-        None => HttpResponse::NotFound().finish(),
-    })
+        StatusCode::OK
+    } else {
+        StatusCode::NOT_FOUND
+    }
 }
 
-#[actix_web::get("/mute/{user}")]
-pub async fn get_mute(user: web::Path<String>, state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
-    let username = user.into_inner();
-    let client = { state.read_err().await?.get_client_by_name(username.as_str()).await? };
+// #[actix_web::get("/mute/{user}")]
+pub async fn get_mute(Path(username): Path<String>, State(state): State<AppStateRef>) -> Result<Json<Mute>, StatusCode> {
+    if let Some(client) = state.server.get_client_by_name(username.as_str()).await {
+        let mute = Mute {
+            mute: client.is_muted(),
+            user: username,
+        };
 
-    Ok(match client {
-        Some(client) => {
-            let mute = Mute {
-                mute: { client.read_err().await?.mute },
-                user: username,
-            };
+        return Ok(Json(mute));
+    }
 
-            HttpResponse::Ok().json(&mute)
-        }
-        None => HttpResponse::NotFound().finish(),
-    })
+    Err(StatusCode::NOT_FOUND)
 }

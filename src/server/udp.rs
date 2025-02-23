@@ -1,17 +1,22 @@
-use crate::error::DecryptError;
 use crate::message::ClientMessage;
-use crate::sync::RwLock;
+use crate::state::ServerStateRef;
 use crate::voice::VoicePacket;
-use crate::ServerState;
-use anyhow::Context;
+use crate::{error::DecryptError, varint::ReadExt};
+
+use anyhow::anyhow;
+
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::net::UdpSocket;
+use tokio_util::sync::CancellationToken;
 
-pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) {
+use super::constants::{MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
+
+pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef, _cancel_token: CancellationToken) {
     loop {
         match udp_server_run(protocol_version, socket.clone(), state.clone()).await {
             Ok(_) => (),
@@ -20,34 +25,54 @@ pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, st
     }
 }
 
-async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) -> Result<(), anyhow::Error> {
+async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef) -> Result<(), anyhow::Error> {
     let mut buffer = BytesMut::zeroed(1024);
-    let (size, addr) = socket.recv_from(&mut buffer).await?;
-    buffer.resize(size, 0);
+    if let Ok((size, addr)) = socket.recv_from(&mut buffer).await {
+        buffer.resize(size, 0);
 
-    tokio::spawn(async move {
-        match handle_packet(buffer, size, addr, protocol_version, socket, state).await {
-            Ok(_) => (),
-            Err(e) => tracing::error!("udp server handle packet error: {:?}", e),
-        }
-    });
+        tokio::spawn(async move {
+            match handle_packet(buffer, size, addr, protocol_version, socket, state).await {
+                Ok(_) => (),
+                Err(e) => tracing::error!("udp server handle packet error: {:?}", e),
+            }
+        });
+    }
 
     Ok(())
 }
 
-async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, protocol_version: u32, socket: Arc<UdpSocket>, state: Arc<RwLock<ServerState>>) -> Result<(), anyhow::Error> {
+async fn handle_packet(
+    mut buffer: BytesMut,
+    size: usize,
+    addr: SocketAddr,
+    protocol_version: u32,
+    socket: Arc<UdpSocket>,
+    state: ServerStateRef,
+) -> Result<(), anyhow::Error> {
+    if size <= 1 {
+        return Err(anyhow!("Invalid packet"));
+    }
     let mut cursor = Cursor::new(&buffer[..size]);
-    let kind = cursor.read_u32::<byteorder::BigEndian>()?;
+    let kind = cursor.read_u8()?;
 
-    if size == 12 && kind == 0 {
-        let timestamp = cursor.read_u64::<byteorder::LittleEndian>()?;
+    let kind = (kind >> 5) & 0x7;
 
+    // respond to the server list ping packet
+    if kind == 0 && size == 12 {
+        let timestamp = cursor.read_varint()?;
+
+        // TODO: actually read version and follow the mumble spec for using UDP protobufs here
         let mut send = Cursor::new(vec![0u8; 24]);
+        // server version
         send.write_u32::<byteorder::BigEndian>(protocol_version)?;
+        // timestamp
         send.write_u64::<byteorder::LittleEndian>(timestamp)?;
-        send.write_u32::<byteorder::BigEndian>(0)?;
-        send.write_u32::<byteorder::BigEndian>(250)?;
-        send.write_u32::<byteorder::BigEndian>(72000)?;
+        // user count
+        send.write_u32::<byteorder::BigEndian>(state.clients.len() as u32)?;
+        // max user count
+        send.write_u32::<byteorder::BigEndian>(MAX_CLIENTS as u32)?;
+        // max bandwidth per user
+        send.write_u32::<byteorder::BigEndian>(MAX_BANDWIDTH_IN_BITS)?;
 
         socket.send_to(send.get_ref().as_slice(), addr).await?;
 
@@ -62,28 +87,31 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
         return Ok(());
     }
 
-    let client_opt = { state.read_err().await?.get_client_by_socket(&addr) };
+    // This breaks when people are using VPN's, should add an option to use it for servers getting
+    // hit by DDoS's
+    // if !state.clients_by_peer.contains(&addr.ip()) {
+    //     tracing::warn!(
+    //         "UPP: User tried to connect with addr: {} but they didn't connect via TCP before.",
+    //         addr
+    //     );
+    //     return Err(anyhow!("Not a valid peer"));
+    // }
+
+    let client_opt = state.get_client_by_socket(&addr).await;
 
     let (client, packet) = match client_opt {
         Some(client) => {
             // Send decrypt packet
 
-            let decrypt_result = {
-                client
-                    .read_err()
-                    .await?
-                    .crypt_state
-                    .write_err()
-                    .await
-                    .context("decrypt voice packet")?
-                    .decrypt(&mut buffer)
+            let (decrypt_result, last_good) = {
+                let mut crypt_state = client.crypt_state.lock().await;
+                (crypt_state.decrypt(&mut buffer), crypt_state.last_good)
             };
 
             match decrypt_result {
                 Ok(p) => (client, p),
                 Err(err) => {
-                    let username = { client.read_err().await?.authenticate.get_username().to_string() };
-                    tracing::warn!("client {} decrypt error: {}", username, err);
+                    tracing::warn!("client {} decrypt error: {}", client, err);
 
                     crate::metrics::MESSAGES_TOTAL
                         .with_label_values(&["udp", "input", "VoicePacket"])
@@ -95,7 +123,7 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
 
                     let restart_crypt = match err {
                         DecryptError::Late => {
-                            let late = { client.read_err().await?.crypt_state.read_err().await?.late };
+                            let late = { client.crypt_state.lock().await.late };
 
                             late > 100
                         }
@@ -103,30 +131,14 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
                         _ => true,
                     };
 
+                    // if we haven't gotten a good packet for 5 seconds then we should reset the clients crypt
+                    let restart_crypt = restart_crypt || Instant::now().duration_since(last_good).as_secs() > 5;
+
                     if restart_crypt {
-                        tracing::error!("client {} udp decrypt error: {}, reset crypt setup", username, err);
+                        tracing::error!("client {} udp decrypt error: {}, reset crypt setup", client, err);
 
-                        let send_crypt_setup = { client.read_err().await?.send_crypt_setup(true).await };
-
-                        if let Err(e) = send_crypt_setup {
+                        if let Err(e) = state.reset_client_crypt(&client).await {
                             tracing::error!("failed to send crypt setup: {:?}", e);
-                        }
-
-                        let client_address = { client.read_err().await?.udp_socket_addr.clone() };
-
-                        // Remove socket address from client
-                        if let Some(address) = client_address {
-                            {
-                                state
-                                    .write_err()
-                                    .await
-                                    .context("remove client by socket")?
-                                    .remove_client_by_socket(&address)
-                            };
-
-                            {
-                                client.write_err().await.context("set udp socket to null")?.udp_socket_addr = None;
-                            };
                         }
                     }
 
@@ -135,57 +147,30 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
             }
         }
         None => {
-            let (client_opt, packet_opt, address_to_remove) = { state.read_err().await?.find_client_for_packet(&mut buffer).await? };
+            if let Some((client, packet)) = state.find_client_with_decrypt(&mut buffer, addr).await? {
+                tracing::info!("UDP connected client {} on {}", client, addr);
 
-            for address in address_to_remove {
-                {
-                    state
-                        .write_err()
-                        .await
-                        .context("remove client by socket when searching for one")?
-                        .remove_client_by_socket(&address)
-                };
-            }
+                (client, packet)
+            } else {
+                // don't log if we've done it recently
+                // if let Ok(Some((_, _))) = state.logs.put(addr, ()) {
+                //     tracing::error!("unknown client from address {}", addr);
+                // }
 
-            match (client_opt, packet_opt) {
-                (Some(client), Some(packet)) => {
-                    {
-                        tracing::info!(
-                            "UPD connected client {} on {}",
-                            client.read_err().await?.authenticate.get_username(),
-                            addr
-                        );
-                    }
+                crate::metrics::UNKNOWN_MESSAGES_TOTAL
+                    .with_label_values(&["udp", "input", "UnknownPackets"])
+                    .inc();
 
-                    {
-                        state
-                            .write_err()
-                            .await
-                            .context("set client socket")?
-                            .set_client_socket(client.clone(), addr)
-                            .await?;
-                    }
+                crate::metrics::UNKNOWN_MESSAGES_BYTES
+                    .with_label_values(&["udp", "input", "UnknownPacket"])
+                    .inc_by(size as u64);
 
-                    (client, packet)
-                }
-                _ => {
-                    tracing::error!("unknown client from address {}", addr);
-
-                    crate::metrics::MESSAGES_TOTAL
-                        .with_label_values(&["udp", "input", "VoicePacket"])
-                        .inc();
-
-                    crate::metrics::MESSAGES_BYTES
-                        .with_label_values(&["udp", "input", "VoicePacket"])
-                        .inc_by(size as u64);
-
-                    return Ok(());
-                }
+                return Ok(());
             }
         }
     };
 
-    let session_id = { client.read_err().await?.session_id };
+    let session_id = client.session_id;
     let client_packet = packet.into_client_bound(session_id);
 
     match &client_packet {
@@ -201,16 +186,11 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
             let mut dest = BytesMut::new();
 
             {
-                client
-                    .read_err()
-                    .await?
-                    .crypt_state
-                    .write_err()
-                    .await
-                    .context("encrypt voice packet")?
-                    .encrypt(&client_packet, &mut dest);
+                let mut crypt = client.crypt_state.lock().await;
+                crypt.encrypt(&client_packet, &mut dest);
             }
 
+            client.last_udp_ping.store(Instant::now());
             let buf = &dest.freeze()[..];
 
             match socket.send_to(buf, addr).await {
@@ -237,13 +217,7 @@ async fn handle_packet(mut buffer: BytesMut, size: usize, addr: SocketAddr, prot
                 .with_label_values(&["udp", "input", "VoicePacket"])
                 .inc_by(size as u64);
 
-            let send_client_packet = {
-                client
-                    .read_err()
-                    .await?
-                    .publisher
-                    .try_send(ClientMessage::RouteVoicePacket(client_packet))
-            };
+            let send_client_packet = { client.publisher.try_send(ClientMessage::RouteVoicePacket(client_packet)) };
 
             match send_client_packet {
                 Ok(_) => (),

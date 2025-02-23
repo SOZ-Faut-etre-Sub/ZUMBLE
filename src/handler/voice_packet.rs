@@ -1,60 +1,77 @@
-use crate::client::Client;
-use crate::error::MumbleError;
-use crate::handler::Handler;
+use scc::HashMap;
+use scc::ebr::Guard;
+use tokio::sync::mpsc::error::TrySendError;
+
+use crate::client::{ClientArc, WeakClient};
+use crate::error::DisconnectReason;
 use crate::message::ClientMessage;
-use crate::sync::RwLock;
-use crate::voice::{Clientbound, VoicePacket};
-use crate::ServerState;
-use async_trait::async_trait;
-use std::collections::HashMap;
+use crate::state::ServerStateRef;
+use crate::voice::{ClientBound, VoicePacket};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-#[async_trait]
-impl Handler for VoicePacket<Clientbound> {
-    async fn handle(&self, state: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
-        let mute = { client.read_err().await?.mute };
+use super::{Handler, MumbleResult};
+
+impl Handler for VoicePacket<ClientBound> {
+    async fn handle(&self, state: &ServerStateRef, client: &ClientArc) -> MumbleResult {
+        let mute = client.is_muted();
 
         if mute {
             return Ok(());
         }
 
-        if let VoicePacket::<Clientbound>::Audio { target, session_id, .. } = self {
-            let mut listening_clients = HashMap::new();
+        if let VoicePacket::<ClientBound>::Audio { target, session_id, .. } = self {
+            // copy the data into an arc so we can reuse the packet for each client
+
+            let listening_clients: HashMap<u32, WeakClient> = HashMap::new();
 
             match *target {
                 // Channel
                 0 => {
-                    let channel_id = { client.read_err().await?.channel_id.load(Ordering::Relaxed) };
-                    let channel_result = { state.read_err().await?.channels.get(&channel_id).cloned() };
+                    let channel_id = client.channel_id.load(Ordering::Relaxed);
 
-                    if let Some(channel) = channel_result {
-                        {
-                            listening_clients.extend(channel.read_err().await?.get_listeners(state.clone()).await);
+                    let guard = Guard::new();
+                    if let Some(channel) = state.channels.peek(&channel_id, &guard) {
+                        let guard = Guard::new();
+
+                        for (session_id, client) in channel.clients.iter(&guard) {
+                            let _ = listening_clients.insert(*session_id, Arc::downgrade(client));
                         }
                     }
                 }
                 // Voice target (whisper)
                 1..=30 => {
-                    let target = { client.read_err().await?.get_target((*target - 1) as usize) };
+                    let target = client.get_target(*target);
 
                     if let Some(target) = target {
-                        let target = target.read_err().await?;
-
-                        for client_id in &target.sessions {
-                            let client_result = { state.read_err().await?.clients.get(client_id).cloned() };
-
-                            if let Some(client) = client_result {
-                                listening_clients.insert(*client_id, client);
+                        {
+                            let guard = Guard::new();
+                            for (session, _) in target.sessions.iter(&guard) {
+                                let client_guard = Guard::new();
+                                if let Some(client) = state.clients.peek(session, &client_guard) {
+                                    let _ = listening_clients.insert(*session, Arc::downgrade(client));
+                                }
                             }
                         }
 
-                        for channel_id in &target.channels {
-                            let channel_result = { state.read_err().await?.channels.get(channel_id).cloned() };
+                        {
+                            let guard = Guard::new();
+                            for (channel_id, _) in target.channels.iter(&guard) {
+                                let guard = Guard::new();
+                                if let Some(target_channel) = state.channels.peek(channel_id, &guard) {
+                                    {
+                                        let guard = Guard::new();
+                                        for (session_id, client) in target_channel.listeners.iter(&guard) {
+                                            let _ = listening_clients.insert(*session_id, Arc::downgrade(client));
+                                        }
+                                    }
 
-                            if let Some(channel) = channel_result {
-                                {
-                                    listening_clients.extend(channel.read_err().await?.get_listeners(state.clone()).await);
+                                    {
+                                        let guard = Guard::new();
+                                        for (session_id, client) in target_channel.clients.iter(&guard) {
+                                            let _ = listening_clients.insert(*session_id, Arc::downgrade(client));
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -62,9 +79,7 @@ impl Handler for VoicePacket<Clientbound> {
                 }
                 // Loopback
                 31 => {
-                    {
-                        client.read_err().await?.send_voice_packet(self.clone()).await?;
-                    }
+                    client.send_voice_packet(self.clone()).await?;
 
                     return Ok(());
                 }
@@ -73,28 +88,31 @@ impl Handler for VoicePacket<Clientbound> {
                 }
             }
 
-            for client in listening_clients.values() {
-                {
-                    let client_read = client.read_err().await?;
+            // remove the calling client from the session list so we don't have to branch here.
+            listening_clients.remove_async(session_id).await;
 
-                    if client_read.deaf {
-                        continue;
-                    }
+            listening_clients
+                .scan_async(|_k, cl| {
+                    if let Some(cl) = cl.upgrade() {
+                        if cl.is_deaf() {
+                            return;
+                        }
 
-                    if client_read.session_id != *session_id {
-                        match client_read.publisher.try_send(ClientMessage::SendVoicePacket(self.clone())) {
+                        match cl.publisher.try_send(ClientMessage::SendVoicePacket(self.clone())) {
                             Ok(_) => {}
-                            Err(err) => {
-                                tracing::error!(
-                                    "error sending voice packet message to {}: {}",
-                                    client_read.authenticate.get_username(),
-                                    err
-                                );
+                            Err(TrySendError::Closed(_) | TrySendError::Full(_)) => {
+                                let session_id = cl.session_id;
+                                let state = Arc::clone(state);
+                                // If we don't have a channel then we should drop the client as the receiving part of the channel got canceled
+                                // TODO: have a queue wrapper for state
+                                tokio::spawn(async move {
+                                    state.disconnect(session_id, DisconnectReason::LostReceivingChannel).await;
+                                });
                             }
                         }
                     }
-                }
-            }
+                })
+                .await;
         }
 
         Ok(())

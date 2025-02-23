@@ -1,10 +1,10 @@
 use crate::error::DecryptError;
 use crate::proto::mumble::CryptSetup;
-use crate::voice::{decode_voice_packet, encode_voice_packet, VoicePacket, VoicePacketDst};
-use actix_web::web::BytesMut;
+use crate::voice::{VoicePacket, VoicePacketDst, decode_voice_packet, encode_voice_packet};
+use aes::Aes128;
 use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
-use aes::Aes128;
+use bytes::BytesMut;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::time::Instant;
 
@@ -28,6 +28,12 @@ pub struct CryptState {
     pub lost: u32,
     pub resync: u32,
     pub last_good: Instant,
+
+    // Remote -> client
+    pub remote_late: u32,
+    pub remote_good: u32,
+    pub remote_lost: u32,
+    pub remote_resync: u32,
 }
 
 impl Default for CryptState {
@@ -47,6 +53,11 @@ impl Default for CryptState {
             lost: 0,
             resync: 0,
             last_good: Instant::now(),
+
+            remote_late: 0,
+            remote_good: 0,
+            remote_lost: 0,
+            remote_resync: 0
         }
     }
 }
@@ -96,7 +107,7 @@ impl CryptState {
         dst.resize(4, 0);
         let mut inner = dst.split_off(4);
 
-        encode_voice_packet(&packet, &mut inner);
+        encode_voice_packet(packet, &mut inner);
 
         let tag = self.ocb_encrypt(inner.as_mut());
         dst.unsplit(inner);
@@ -160,7 +171,7 @@ impl CryptState {
             self.decrypt_nonce = saved_nonce;
         }
 
-        self.lost = (self.lost as i32 + lost as i32) as u32;
+        self.lost = (self.lost as i32 + lost) as u32;
 
         decode_voice_packet(buf)
     }
