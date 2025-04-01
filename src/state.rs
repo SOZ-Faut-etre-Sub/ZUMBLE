@@ -4,7 +4,7 @@ use crate::crypt::CryptState;
 use crate::error::{DisconnectReason, MumbleError};
 use crate::message::ClientMessage;
 use crate::proto::mumble::{Authenticate, ChannelRemove, ChannelState, CodecVersion, UserRemove, Version};
-use crate::proto::{MessageKind, message_to_bytes};
+use crate::proto::{message_to_bytes, MessageKind};
 use crate::server::constants::{ConcurrentHashMap, MAX_CLIENTS};
 use crate::voice::{ServerBound, VoicePacket};
 use bytes::BytesMut;
@@ -12,8 +12,8 @@ use protobuf::Message;
 // use scc::HashCache;
 use scc::ebr::Guard;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::Sender;
@@ -82,7 +82,7 @@ impl ServerState {
             // we preallocate the maximum amount of clients to prevent the possibility of resizes
             // later, which will prevent double-sends in certain situations
             clients: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
-            restrict_to_version: Arc::new(restrict_to_version),
+            restrict_to_version: Arc::new(restrict_to_version.map(|v| v.to_lowercase())),
             // logs: HashCache::with_capacity(500, 1000),
             clients_without_udp: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
             clients_by_socket: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
