@@ -5,39 +5,39 @@ edition = "2024"
 
 [dependencies]
 aes = "0.8.4"
-anyhow = "1.0.93"
+anyhow = "1.0.98"
 # TODO: Update to https://github.com/RustCrypto/block-modes
 block-modes = "0.9.1"
-bytes = "1.9.0"
+bytes = "1.10.1"
 byteorder = "1.5.0"
-clap = { version = "4.5.21", features = ["derive"] }
+clap = { version = "4.5.40", features = ["derive"] }
 futures = "0.3.31"
 futures-util = "0.3.31"
 lazy_static = "1.5.0"
 protobuf = "2.28.0"
-ring = "0.17.8"
-rustls = { version = "0.23.19", features = ["ring", "tls12"], default-features = false }
+ring = "0.17.14"
+rustls = { version = "0.23.28", features = ["ring", "tls12"], default-features = false }
 rustls-pemfile = "2.2.0"
-serde = { version = "1.0.215", features = ["derive"] }
-serde_json = "1.0.133"
-thiserror = "2.0.3"
-tokio = { version = "1.41.1", features = ["full", "tracing"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+thiserror = "2.0.12"
+tokio = { version = "1.45.1", features = ["full", "tracing"] }
 tokio-byteorder = "0.3.0"
-tokio-rustls = { version = "0.26.0", features = ["ring", "tls12"], default-features = false}
+tokio-rustls = { version = "0.26.2", features = ["ring", "tls12"], default-features = false}
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 prometheus = { version  = "0.13.4", features = ["process"] }
-rustls-pki-types = "1.10.0"
-rcgen = { version = "0.13.1" }
-scc = "2.2.5"
-parking_lot = "0.12.3"
+rustls-pki-types = "1.12.0"
+rcgen = { version = "0.13.2" }
+scc = "2.3.4"
+parking_lot = "0.12.4"
 arc-swap = "1.7.1"
 crossbeam = "0.8.4"
 axum = { version = "0.7.9", features = ["macros"] }
 # TODO update whenever axum-server and axum-auth go to 0.8.1
-axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
+axum-server = { version = "0.7.2", features = ["tls-rustls-no-provider"] }
 axum-auth = "0.7.0"
-tokio-util = "0.7.13"
+tokio-util = "0.7.15"
 regex = "1.11.1"
 atomic_float = "1.1.0"
 
