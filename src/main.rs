@@ -116,10 +116,9 @@ async fn main() {
 
     let mut set = JoinSet::new();
 
-    let std_socket = std::net::UdpSocket::bind(&args.listen).unwrap();
-    std_socket.set_nonblocking(true).unwrap();
-
-    let socket = UdpSocket::from_std(std_socket).unwrap();
+    let socket = UdpSocket::bind(&args.listen)
+        .await
+        .expect("UdpSocket couldn't be made for the specified port:ip combo.");
 
     let udp_socket = Arc::new(socket);
 

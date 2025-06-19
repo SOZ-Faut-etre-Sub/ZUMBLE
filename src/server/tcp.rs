@@ -49,7 +49,8 @@ pub async fn create_tcp_server(
         // if we're over our max client count then we should shut down the tcp stream
         if cur_clients >= MAX_CLIENTS {
             tokio::spawn(async move {
-                tcp_stream.shutdown().await.unwrap();
+                // we don't care if this errors, drop the result
+                let _ = tcp_stream.shutdown();
             });
             tracing::info!(
                 "{:?} tried to join but the server is at maximum capacity ({}/{})",
