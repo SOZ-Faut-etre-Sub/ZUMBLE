@@ -1,4 +1,4 @@
-FROM rustlang/rust:nightly as builder
+FROM rust:1.87 as builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -12,11 +12,11 @@ WORKDIR /rumble-build
 
 RUN --mount=type=cache,target=/usr/local/cargo,from=rust,source=/usr/local/cargo \
     --mount=type=cache,target=target \
-    cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/rust-mumble /rust-mumble
+    cargo build --release --target x86_64-unknown-linux-musl && cp target/x86_64-unknown-linux-musl/release/zumble /zumble
 
 FROM scratch
 
-COPY --from=builder /rust-mumble /rust-mumble
+COPY --from=builder /zumble /zumble
 
 EXPOSE 64738/udp
 EXPOSE 64738/tcp
@@ -24,4 +24,4 @@ EXPOSE 8080/tcp
 
 ENV RUST_LOG=info
 
-CMD ["/rust-mumble"] # Password should be passed via args
+CMD ["/zumble"]
