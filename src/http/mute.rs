@@ -11,11 +11,6 @@ pub struct Mute {
     user: String,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct MuteAll {
-    mute: bool,
-}
-
 #[actix_web::post("/mute")]
 pub async fn post_mute(mute: web::Json<Mute>, state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
     let client = { state.read_err().await?.get_client_by_name(mute.user.as_str()).await? };
@@ -28,13 +23,6 @@ pub async fn post_mute(mute: web::Json<Mute>, state: web::Data<Arc<RwLock<Server
         }
         None => HttpResponse::NotFound().finish(),
     })
-}
-
-#[actix_web::post("/mute_all")]
-pub async fn post_mute_all(mute_all: web::Json<MuteAll>, state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
-    state.read_err().await?.mute_all.store(mute_all.mute, std::sync::atomic::Ordering::Relaxed);
-
-    Ok(HttpResponse::Ok().finish())
 }
 
 #[actix_web::get("/mute/{user}")]

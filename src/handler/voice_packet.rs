@@ -19,12 +19,6 @@ impl Handler for VoicePacket<Clientbound> {
             return Ok(());
         }
 
-        let mute_all = { state.read_err().await?.mute_all.load(Ordering::Relaxed) };
-
-        if mute_all {
-            return Ok(());
-        }
-
         if let VoicePacket::<Clientbound>::Audio { target, session_id, .. } = self {
             let mut listening_clients = HashMap::new();
 

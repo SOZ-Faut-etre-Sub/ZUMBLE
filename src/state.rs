@@ -12,7 +12,7 @@ use protobuf::Message;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 use tokio::io::WriteHalf;
 use tokio::net::{TcpStream, UdpSocket};
@@ -63,7 +63,6 @@ pub struct ServerState {
     pub channels: HashMap<u32, Arc<RwLock<Channel>>>,
     pub codec_state: RwLock<CodecState>,
     pub socket: Arc<UdpSocket>,
-    pub mute_all: AtomicBool,
 }
 
 impl ServerState {
@@ -86,7 +85,6 @@ impl ServerState {
             channels,
             codec_state: RwLock::new(CodecState::default()),
             socket,
-            mute_all: AtomicBool::new(false),
         }
     }
 
