@@ -1,5 +1,5 @@
 [package]
-name = "rust-mumble"
+name = "zumble"
 version = "0.1.0"
 edition = "2024"
 

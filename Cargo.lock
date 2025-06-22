@@ -1038,43 +1038,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-mumble"
-version = "0.1.0"
-dependencies = [
- "aes",
- "anyhow",
- "arc-swap",
- "atomic_float",
- "axum",
- "axum-auth",
- "axum-server",
- "byteorder",
- "bytes",
- "clap",
- "crossbeam",
- "futures",
- "lazy_static",
- "prometheus",
- "protobuf",
- "rcgen",
- "regex",
- "ring",
- "rustls",
- "rustls-pemfile",
- "rustls-pki-types",
- "scc",
- "serde",
- "serde_json",
- "thiserror 2.0.12",
- "tikv-jemallocator",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1758,3 +1721,40 @@ name = "zeroize"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ced3678a2879b30306d323f4542626697a464a97c0a07c9aebf7ebca65cd4dde"
+
+[[package]]
+name = "zumble"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "anyhow",
+ "arc-swap",
+ "atomic_float",
+ "axum",
+ "axum-auth",
+ "axum-server",
+ "byteorder",
+ "bytes",
+ "clap",
+ "crossbeam",
+ "futures",
+ "lazy_static",
+ "prometheus",
+ "protobuf",
+ "rcgen",
+ "regex",
+ "ring",
+ "rustls",
+ "rustls-pemfile",
+ "rustls-pki-types",
+ "scc",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tikv-jemallocator",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
