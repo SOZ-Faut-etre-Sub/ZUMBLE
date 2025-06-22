@@ -1,12 +1,12 @@
 use anyhow::Error;
 
-use crate::client::ClientArc;
-use crate::handler::Handler;
-use crate::proto::MessageKind;
-use crate::proto::mumble::ChannelState;
-use crate::state::ServerStateRef;
-
 use super::MumbleResult;
+use crate::{
+    client::ClientArc,
+    handler::Handler,
+    proto::{MessageKind, mumble::ChannelState},
+    state::ServerStateRef,
+};
 
 impl Handler for ChannelState {
     async fn handle(&self, state: &ServerStateRef, client: &ClientArc) -> MumbleResult {

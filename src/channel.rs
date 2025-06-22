@@ -1,7 +1,6 @@
-use crate::client::ClientArc;
-use crate::proto::mumble::ChannelState;
-use crate::server::constants::ConcurrentHashMap;
 use std::sync::{Arc, Weak};
+
+use crate::{client::ClientArc, proto::mumble::ChannelState, server::constants::ConcurrentHashMap};
 
 pub type WeakChannelRef = Weak<Channel>;
 pub type ChannelRef = Arc<Channel>;

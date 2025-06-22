@@ -1,12 +1,12 @@
-use crate::client::ClientArc;
-use crate::handler::Handler;
-use crate::proto::MessageKind;
-use crate::proto::mumble::Ping;
-use crate::state::ServerStateRef;
-use std::sync::atomic::Ordering;
-use std::time::Instant;
+use std::{sync::atomic::Ordering, time::Instant};
 
 use super::MumbleResult;
+use crate::{
+    client::ClientArc,
+    handler::Handler,
+    proto::{MessageKind, mumble::Ping},
+    state::ServerStateRef,
+};
 
 impl Handler for Ping {
     async fn handle(&self, _state: &ServerStateRef, client: &ClientArc) -> MumbleResult {

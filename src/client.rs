@@ -1,30 +1,42 @@
-use crate::crypt::CryptState;
-use crate::error::MumbleError;
-use crate::message::ClientMessage;
-use crate::proto::mumble::{Authenticate, ServerConfig, ServerSync, UserState, Version};
-use crate::proto::{MessageKind, expected_message, get_mumble_buffer, message_to_bytes, send_message};
-use crate::server::constants::MAX_BANDWIDTH_IN_BITS;
-use crate::state::ServerStateRef;
-use crate::target::VoiceTarget;
-use crate::voice::{ClientBound, VoicePacket, encode_voice_packet};
+use std::{
+    fmt::Display,
+    net::SocketAddr,
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
 use arc_swap::ArcSwapOption;
 use atomic_float::AtomicF32;
 use bytes::{Bytes, BytesMut};
 use crossbeam::atomic::AtomicCell;
 use protobuf::Message;
 use scc::ebr::Guard;
-use std::fmt::Display;
-use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Weak};
-use std::time::{Duration, Instant};
-use tokio::io::{AsyncWriteExt, WriteHalf};
-use tokio::net::{TcpStream, UdpSocket};
-use tokio::sync::Mutex;
-use tokio::sync::mpsc::Sender;
-use tokio::time::timeout;
+use tokio::{
+    io::{AsyncWriteExt, WriteHalf},
+    net::{TcpStream, UdpSocket},
+    sync::{Mutex, mpsc::Sender},
+    time::timeout,
+};
 use tokio_rustls::server::TlsStream;
 use tokio_util::sync::CancellationToken;
+
+use crate::{
+    crypt::CryptState,
+    error::MumbleError,
+    message::ClientMessage,
+    proto::{
+        MessageKind, expected_message, get_mumble_buffer, message_to_bytes,
+        mumble::{Authenticate, ServerConfig, ServerSync, UserState, Version},
+        send_message,
+    },
+    server::constants::MAX_BANDWIDTH_IN_BITS,
+    state::ServerStateRef,
+    target::VoiceTarget,
+    voice::{ClientBound, VoicePacket, encode_voice_packet},
+};
 
 pub type ClientArc = Arc<Client>;
 pub type WeakClient = Weak<Client>;
@@ -38,7 +50,7 @@ pub struct NetStats {
     pub udp_ping_avg: AtomicF32,
     pub udp_ping_var: AtomicF32,
     pub tcp_ping_avg: AtomicF32,
-    pub tcp_ping_var: AtomicF32
+    pub tcp_ping_var: AtomicF32,
 }
 
 pub struct Client {

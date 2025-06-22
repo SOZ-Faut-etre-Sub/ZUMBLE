@@ -1,16 +1,16 @@
-use scc::HashMap;
-use scc::ebr::Guard;
+use std::sync::{Arc, atomic::Ordering};
+
+use scc::{HashMap, ebr::Guard};
 use tokio::sync::mpsc::error::TrySendError;
 
-use crate::client::{ClientArc, WeakClient};
-use crate::error::DisconnectReason;
-use crate::message::ClientMessage;
-use crate::state::ServerStateRef;
-use crate::voice::{ClientBound, VoicePacket};
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
-
 use super::{Handler, MumbleResult};
+use crate::{
+    client::{ClientArc, WeakClient},
+    error::DisconnectReason,
+    message::ClientMessage,
+    state::ServerStateRef,
+    voice::{ClientBound, VoicePacket},
+};
 
 impl Handler for VoicePacket<ClientBound> {
     async fn handle(&self, state: &ServerStateRef, client: &ClientArc) -> MumbleResult {
@@ -25,7 +25,7 @@ impl Handler for VoicePacket<ClientBound> {
         if mute_all {
             return Ok(());
         }
-        
+
         if let VoicePacket::<ClientBound>::Audio { target, session_id, .. } = self {
             // copy the data into an arc so we can reuse the packet for each client
 

@@ -1,9 +1,5 @@
-use crate::client::ClientArc;
-use crate::handler::Handler;
-use crate::proto::mumble::CryptSetup;
-use crate::state::ServerStateRef;
-
 use super::MumbleResult;
+use crate::{client::ClientArc, handler::Handler, proto::mumble::CryptSetup, state::ServerStateRef};
 
 impl Handler for CryptSetup {
     async fn handle(&self, _state: &ServerStateRef, client: &ClientArc) -> MumbleResult {

@@ -1,20 +1,13 @@
-use crate::message::ClientMessage;
-use crate::state::ServerStateRef;
-use crate::voice::VoicePacket;
-use crate::{error::DecryptError, varint::ReadExt};
+use std::{io::Cursor, net::SocketAddr, sync::Arc, time::Instant};
 
 use anyhow::anyhow;
-
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
-use std::io::Cursor;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio_util::sync::CancellationToken;
 
 use super::constants::{MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
+use crate::{error::DecryptError, message::ClientMessage, state::ServerStateRef, varint::ReadExt, voice::VoicePacket};
 
 pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef, _cancel_token: CancellationToken) {
     loop {

@@ -4,30 +4,32 @@ mod crypt_setup;
 mod permission_query;
 mod ping;
 mod user_state;
+mod user_stats;
 mod version;
 mod voice_packet;
 mod voice_target;
-mod user_stats;
 
 // use anyhow::anyhow;
 
-use anyhow::anyhow;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::{Arc, atomic::Ordering};
 
-use crate::client::ClientArc;
-use crate::error::MumbleError;
-use crate::message::ClientMessage;
-use crate::proto::MessageKind;
-use crate::proto::mumble;
-use crate::state::ServerStateRef;
-use crate::voice::{ServerBound, decode_voice_packet};
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use bytes::BytesMut;
 use protobuf::Message;
-use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::sync::mpsc::Receiver;
-use tokio::task::JoinSet;
+use tokio::{
+    io::{AsyncRead, AsyncReadExt},
+    sync::mpsc::Receiver,
+    task::JoinSet,
+};
+
+use crate::{
+    client::ClientArc,
+    error::MumbleError,
+    message::ClientMessage,
+    proto::{MessageKind, mumble},
+    state::ServerStateRef,
+    voice::{ServerBound, decode_voice_packet},
+};
 
 type MumbleResult = anyhow::Result<()>;
 

@@ -1,24 +1,28 @@
-use std::net::IpAddr;
-use std::sync::{Arc, LazyLock};
-use std::time::Duration;
+use std::{
+    net::IpAddr,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 
-use crate::client::{Client, ClientArc};
-use crate::error::DisconnectReason;
-use crate::handler::MessageHandler;
-use crate::message::ClientMessage;
-use crate::proto::MessageKind;
-use crate::proto::mumble::Version;
-use crate::server::constants::{MAX_BANDWIDTH_IN_BYTES, MAX_CLIENTS};
-use crate::state::ServerStateRef;
 use anyhow::Context;
 use futures::TryFutureExt;
 use regex::Regex;
-use tokio::io::{self};
-use tokio::io::{AsyncWriteExt, ReadHalf};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc;
-use tokio::sync::mpsc::Receiver;
+use tokio::{
+    io::{self, AsyncWriteExt, ReadHalf},
+    net::{TcpListener, TcpStream},
+    sync::{mpsc, mpsc::Receiver},
+};
 use tokio_rustls::{TlsAcceptor, server::TlsStream};
+
+use crate::{
+    client::{Client, ClientArc},
+    error::DisconnectReason,
+    handler::MessageHandler,
+    message::ClientMessage,
+    proto::{MessageKind, mumble::Version},
+    server::constants::{MAX_BANDWIDTH_IN_BYTES, MAX_CLIENTS},
+    state::ServerStateRef,
+};
 
 pub async fn create_tcp_server(
     tcp_listener: TcpListener,

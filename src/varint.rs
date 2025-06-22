@@ -1,9 +1,9 @@
 //! Extension traits for Mumble's varint format.
 
-use byteorder::ReadBytesExt;
-use byteorder::WriteBytesExt;
-use bytes::BufMut;
 use std::io;
+
+use byteorder::{ReadBytesExt, WriteBytesExt};
+use bytes::BufMut;
 
 /// Extension trait for reading varint values.
 pub trait ReadExt: io::Read {

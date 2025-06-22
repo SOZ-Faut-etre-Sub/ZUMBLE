@@ -1,8 +1,10 @@
-use crate::error::{DisconnectReason, MumbleError};
-use crate::server::constants::ConcurrentHashMap;
-use crate::state::{ServerState, ServerStateRef};
-use std::sync::Arc;
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
+
+use crate::{
+    error::{DisconnectReason, MumbleError},
+    server::constants::ConcurrentHashMap,
+    state::{ServerState, ServerStateRef},
+};
 
 pub async fn handle_server_tick(state: ServerStateRef) {
     loop {

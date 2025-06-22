@@ -1,10 +1,5 @@
-use crate::client::ClientArc;
-use crate::error::MumbleError;
-use crate::handler::Handler;
-use crate::proto::mumble::VoiceTarget;
-use crate::state::ServerStateRef;
-
 use super::MumbleResult;
+use crate::{client::ClientArc, error::MumbleError, handler::Handler, proto::mumble::VoiceTarget, state::ServerStateRef};
 
 impl Handler for VoiceTarget {
     async fn handle(&self, _: &ServerStateRef, client: &ClientArc) -> MumbleResult {

@@ -1,18 +1,17 @@
 //! Voice channel packets and codecs
 
-use crate::error::DecryptError;
-use byteorder::ReadBytesExt;
-use bytes::Buf;
-use bytes::BufMut;
-use bytes::Bytes;
-use bytes::BytesMut;
-use std::fmt::Debug;
-use std::io;
-use std::io::{Cursor, Read};
-use std::marker::PhantomData;
+use std::{
+    fmt::Debug,
+    io,
+    io::{Cursor, Read},
+    marker::PhantomData,
+};
 
-use super::varint::BufMutExt;
-use super::varint::ReadExt;
+use byteorder::ReadBytesExt;
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+
+use super::varint::{BufMutExt, ReadExt};
+use crate::error::DecryptError;
 
 /// A packet transmitted via Mumble's voice channel.
 #[derive(Clone, Debug, PartialEq, Eq)]

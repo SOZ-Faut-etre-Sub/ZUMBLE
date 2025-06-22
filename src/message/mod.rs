@@ -1,7 +1,11 @@
-use crate::proto::MessageKind;
-use crate::voice::{ClientBound, VoicePacket};
-use bytes::Bytes;
 use std::sync::Arc;
+
+use bytes::Bytes;
+
+use crate::{
+    proto::MessageKind,
+    voice::{ClientBound, VoicePacket},
+};
 
 #[derive(Debug, Clone)]
 pub enum ClientMessage {

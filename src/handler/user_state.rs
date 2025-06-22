@@ -2,12 +2,8 @@ use std::sync::Arc;
 
 use scc::ebr::Guard;
 
-use crate::client::ClientArc;
-use crate::handler::Handler;
-use crate::proto::mumble::UserState;
-use crate::state::ServerStateRef;
-
 use super::MumbleResult;
+use crate::{client::ClientArc, handler::Handler, proto::mumble::UserState, state::ServerStateRef};
 
 impl Handler for UserState {
     async fn handle(&self, state: &ServerStateRef, client: &ClientArc) -> MumbleResult {

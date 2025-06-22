@@ -1,5 +1,4 @@
 use rustls::ServerConfig;
-
 #[cfg(not(target_os = "windows"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -27,25 +26,30 @@ mod target;
 mod varint;
 mod voice;
 
-use crate::clean::handle_server_tick;
-use crate::http::create_http_server;
-use crate::proto::mumble::Version;
-use crate::server::{create_tcp_server, create_udp_server};
-use crate::state::ServerState;
+use std::{net::SocketAddr, sync::Arc};
 
 use axum_server::tls_rustls::RustlsConfig;
 use clap::Parser;
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P384_SHA384, date_time_ymd};
 use rustls::crypto::{self, CryptoProvider};
-use rustls_pki_types::PrivateKeyDer;
-use rustls_pki_types::pem::PemObject;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::net::{TcpListener, UdpSocket};
-use tokio::task::JoinSet;
-use tokio_rustls::TlsAcceptor;
-use tokio_rustls::rustls::{self};
+use rustls_pki_types::{PrivateKeyDer, pem::PemObject};
+use tokio::{
+    net::{TcpListener, UdpSocket},
+    task::JoinSet,
+};
+use tokio_rustls::{
+    TlsAcceptor,
+    rustls::{self},
+};
 use tokio_util::sync::CancellationToken;
+
+use crate::{
+    clean::handle_server_tick,
+    http::create_http_server,
+    proto::mumble::Version,
+    server::{create_tcp_server, create_udp_server},
+    state::ServerState,
+};
 
 /// Zumble, a mumble server implementation for FiveM
 #[derive(Parser, Debug)]

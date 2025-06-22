@@ -1,12 +1,17 @@
-use crate::error::DecryptError;
-use crate::proto::mumble::CryptSetup;
-use crate::voice::{VoicePacket, VoicePacketDst, decode_voice_packet, encode_voice_packet};
-use aes::Aes128;
-use aes::cipher::generic_array::GenericArray;
-use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use std::time::Instant;
+
+use aes::{
+    Aes128,
+    cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray},
+};
 use bytes::BytesMut;
 use ring::rand::{SecureRandom, SystemRandom};
-use std::time::Instant;
+
+use crate::{
+    error::DecryptError,
+    proto::mumble::CryptSetup,
+    voice::{VoicePacket, VoicePacketDst, decode_voice_packet, encode_voice_packet},
+};
 
 lazy_static! {
     static ref SYSTEM_RANDOM: SystemRandom = SystemRandom::new();
@@ -57,7 +62,7 @@ impl Default for CryptState {
             remote_late: 0,
             remote_good: 0,
             remote_lost: 0,
-            remote_resync: 0
+            remote_resync: 0,
         }
     }
 }

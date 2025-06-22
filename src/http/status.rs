@@ -1,10 +1,12 @@
-use axum::Json;
-use axum::extract::State;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::atomic::Ordering,
+    time::Instant,
+};
+
+use axum::{Json, extract::State};
 use scc::ebr::Guard;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::Ordering;
-use std::time::Instant;
 
 use super::AppStateRef;
 

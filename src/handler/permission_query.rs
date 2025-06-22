@@ -1,10 +1,10 @@
-use crate::client::ClientArc;
-use crate::handler::Handler;
-use crate::proto::MessageKind;
-use crate::proto::mumble::PermissionQuery;
-use crate::state::ServerStateRef;
-
 use super::MumbleResult;
+use crate::{
+    client::ClientArc,
+    handler::Handler,
+    proto::{MessageKind, mumble::PermissionQuery},
+    state::ServerStateRef,
+};
 
 // const PERM_NONE: u32 = 0x0;
 // const PERM_WRITE: u32 = 0x1;

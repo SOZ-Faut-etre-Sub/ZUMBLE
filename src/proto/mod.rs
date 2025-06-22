@@ -1,9 +1,10 @@
-use crate::error::MumbleError;
-use crate::handler::Handler;
+use std::fmt;
+
 use bytes::{BufMut, Bytes, BytesMut};
 use protobuf::Message;
-use std::fmt;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+
+use crate::{error::MumbleError, handler::Handler};
 
 pub mod mumble;
 
