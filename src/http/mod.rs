@@ -51,7 +51,6 @@ pub fn create_http_server(
             .service(metrics::get_metrics)
             .service(mute::get_mute)
             .service(mute::post_mute)
-            .service(mute::post_mute_all)
             .service(deaf::get_deaf)
             .service(deaf::post_deaf)
             .service(status::get_status)
