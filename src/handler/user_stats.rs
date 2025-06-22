@@ -1,7 +1,4 @@
-use std::sync::{Arc, atomic::Ordering};
-
-use protobuf::Clear;
-use scc::ebr::Guard;
+use std::sync::{atomic::Ordering};
 
 use super::MumbleResult;
 use crate::{

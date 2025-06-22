@@ -107,11 +107,11 @@ impl TryFrom<u16> for MessageKind {
     }
 }
 
-pub fn get_mumble_buffer(kind: MessageKind, bytes: &Vec<u8>) -> Bytes {
+pub fn get_mumble_buffer(kind: MessageKind, bytes: &[u8]) -> Bytes {
     let mut buffer = BytesMut::new();
     buffer.put_u16(kind as u16);
     buffer.put_u32(bytes.len() as u32);
-    buffer.put_slice(&bytes);
+    buffer.put_slice(bytes);
 
     buffer.freeze()
 }

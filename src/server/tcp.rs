@@ -54,7 +54,7 @@ pub async fn create_tcp_server(
         if cur_clients >= MAX_CLIENTS {
             tokio::spawn(async move {
                 // we don't care if this errors, drop the result
-                let _ = tcp_stream.shutdown();
+                let _ = tcp_stream.shutdown().await;
             });
             tracing::info!(
                 "{:?} tried to join but the server is at maximum capacity ({}/{})",
@@ -72,13 +72,13 @@ pub async fn create_tcp_server(
 
             let stream = tls_acceptor
                 .accept(tcp_stream)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Client TLS connect fail: {:?}", e)));
+                .map_err(|e| io::Error::other(format!("Client TLS connect fail: {:?}", e)));
 
             const TLS_TIMEOUT: u64 = 5;
 
             let stream = tokio::time::timeout(Duration::from_secs(TLS_TIMEOUT), stream).map_err(move |_e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
+                io::Error::new(
+                    io::ErrorKind::TimedOut,
                     format!("Client TLS handshake timedout after {} seconds", TLS_TIMEOUT),
                 )
             });

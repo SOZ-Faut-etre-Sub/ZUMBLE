@@ -9,8 +9,6 @@ mod version;
 mod voice_packet;
 mod voice_target;
 
-// use anyhow::anyhow;
-
 use std::sync::{Arc, atomic::Ordering};
 
 use anyhow::{Context, anyhow};

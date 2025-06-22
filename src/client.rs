@@ -234,7 +234,7 @@ impl Client {
     pub async fn send_message_raw(&self, kind: MessageKind, buffer: Bytes) -> Result<(), MumbleError> {
         tracing::trace!("[{}] [{}] send message: {:?}", self.name, self.session_id, kind);
 
-        let bytes = get_mumble_buffer(kind, &buffer.to_vec());
+        let bytes = get_mumble_buffer(kind, &buffer);
 
         self.send(bytes.as_ref()).await?;
 

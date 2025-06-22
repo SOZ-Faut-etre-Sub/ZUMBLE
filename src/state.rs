@@ -4,12 +4,10 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
-    time::Instant,
 };
 
 use bytes::BytesMut;
 use protobuf::Message;
-// use scc::HashCache;
 use scc::ebr::Guard;
 use tokio::{
     io::WriteHalf,
