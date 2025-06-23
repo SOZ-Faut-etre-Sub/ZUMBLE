@@ -1,45 +1,47 @@
-use super::MumbleResult;
-use crate::{client::ClientArc, error::MumbleError, handler::Handler, proto::mumble::VoiceTarget, state::ServerStateRef};
+use crate::client::Client;
+use crate::error::MumbleError;
+use crate::handler::Handler;
+use crate::proto::mumble::VoiceTarget;
+use crate::sync::RwLock;
+use crate::ServerState;
+use async_trait::async_trait;
+use std::collections::HashSet;
+use std::sync::Arc;
 
+#[async_trait]
 impl Handler for VoiceTarget {
-    async fn handle(&self, _: &ServerStateRef, client: &ClientArc) -> MumbleResult {
-        // mumble spec limits the usable voice targets to 1..=30
-        if self.get_id() < 1 || self.get_id() >= 31 {
-            tracing::error!("invalid voice target id: {}", self.get_id());
-            return Err(MumbleError::InvalidVoiceTarget.into());
+    async fn handle(&self, _: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
+        if !self.has_id() {
+            return Ok(());
         }
 
-        let target_opt = { client.get_target(self.get_id() as u8) };
+        let target_opt = { client.read_err().await?.get_target((self.get_id() - 1) as usize) };
 
-        // TODO: maybe swap this for raw access (just unwrap) since this shouldn't ever get past
-        // the check above
         let target = match target_opt {
             Some(target) => target,
             None => {
-                tracing::error!(
-                    "{} tried to target voice target {} but the channel didn't exist",
-                    client,
-                    self.get_id()
-                );
+                tracing::error!("invalid voice target id: {}", self.get_id());
+
                 return Ok(());
             }
         };
 
-        target.sessions.clear_async().await;
-        target.channels.clear_async().await;
+        let mut sessions = HashSet::new();
+        let mut channels = HashSet::new();
 
         for target_item in self.get_targets() {
             for session in target_item.get_session() {
-                // tracing::debug!("{} is targeting session: {session}", client);
-                // we clear this above, we won't run into duplicate inserts.
-                let _ = target.sessions.insert_async(*session, ()).await;
+                sessions.insert(*session);
             }
 
             if target_item.has_channel_id() {
-                // tracing::debug!("{} is targeting channel: {}", client, target_item.get_channel_id());
-                // we clear this above, we won't run into duplicate inserts.
-                let _ = target.channels.insert_async(target_item.get_channel_id(), ()).await;
+                channels.insert(target_item.get_channel_id());
             }
+        }
+
+        {
+            target.write_err().await?.sessions = sessions;
+            target.write_err().await?.channels = channels;
         }
 
         Ok(())

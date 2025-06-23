@@ -1,17 +1,17 @@
-use axum::http::StatusCode;
+use actix_web::HttpResponse;
 use prometheus::{Encoder, TextEncoder};
 
-// #[actix_web::get("/metrics")]
-pub async fn get_metrics() -> Result<Vec<u8>, StatusCode> {
+#[actix_web::get("/metrics")]
+pub async fn get_metrics() -> HttpResponse {
     let encoder = TextEncoder::new();
     let mut buffer = vec![];
 
     match encoder.encode(&prometheus::gather(), &mut buffer) {
-        Ok(_) => Ok(buffer),
+        Ok(_) => HttpResponse::Ok().body(buffer),
         Err(err) => {
             tracing::error!("error encoding metrics: {}", err);
 
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            HttpResponse::InternalServerError().finish()
         }
     }
 }

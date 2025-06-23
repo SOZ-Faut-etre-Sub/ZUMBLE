@@ -1,45 +1,34 @@
-use std::{sync::atomic::Ordering, time::Instant};
+use crate::client::Client;
+use crate::error::MumbleError;
+use crate::handler::Handler;
+use crate::proto::mumble::Ping;
+use crate::proto::MessageKind;
+use crate::sync::RwLock;
+use crate::ServerState;
+use async_trait::async_trait;
+use std::sync::Arc;
+use std::time::Instant;
 
-use super::MumbleResult;
-use crate::{
-    client::ClientArc,
-    handler::Handler,
-    proto::{MessageKind, mumble::Ping},
-    state::ServerStateRef,
-};
-
+#[async_trait]
 impl Handler for Ping {
-    async fn handle(&self, _state: &ServerStateRef, client: &ClientArc) -> MumbleResult {
+    async fn handle(&self, _state: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
         let mut ping = Ping::default();
         ping.set_timestamp(self.get_timestamp());
 
+        let crypt_state = { client.read_err().await?.crypt_state.clone() };
+
         {
-            client.last_tcp_ping.swap(Instant::now());
+            *client.read_err().await?.last_ping.write_err().await? = Instant::now();
         }
 
-        let stats = &client.net_stats;
-
-        stats.udp_packets.store(self.get_udp_packets(), Ordering::Relaxed);
-        stats.tcp_packets.store(self.get_tcp_packets(), Ordering::Relaxed);
-        stats.udp_ping_avg.store(self.get_udp_ping_avg(), Ordering::Relaxed);
-        stats.udp_ping_var.store(self.get_udp_ping_var(), Ordering::Relaxed);
-        stats.tcp_ping_avg.store(self.get_tcp_ping_avg(), Ordering::Relaxed);
-        stats.tcp_ping_var.store(self.get_tcp_ping_var(), Ordering::Relaxed);
-
         {
-            let mut crypt_state_read = client.crypt_state.lock().await;
-
-            crypt_state_read.remote_good = self.get_good();
-            crypt_state_read.remote_late = self.get_late();
-            crypt_state_read.remote_lost = self.get_lost();
-            crypt_state_read.remote_resync = self.get_resync();
-
+            let crypt_state_read = crypt_state.read_err().await?;
             ping.set_good(crypt_state_read.good);
             ping.set_late(crypt_state_read.late);
             ping.set_lost(crypt_state_read.lost);
             ping.set_resync(crypt_state_read.resync);
         }
 
-        client.send_message(MessageKind::Ping, &ping).await.map_err(anyhow::Error::new)
+        client.read_err().await?.send_message(MessageKind::Ping, &ping).await
     }
 }

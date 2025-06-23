@@ -1,11 +1,9 @@
-use axum::{
-    Json,
-    extract::{Path, State},
-    http::StatusCode,
-};
+use crate::error::MumbleError;
+use crate::sync::RwLock;
+use crate::ServerState;
+use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
-
-use super::AppStateRef;
+use std::sync::Arc;
 
 #[derive(Serialize, Deserialize)]
 pub struct Mute {
@@ -18,32 +16,41 @@ pub struct MuteAll {
     mute: bool,
 }
 
-pub async fn post_mute(State(state): State<AppStateRef>, Json(mute): Json<Mute>) -> StatusCode {
-    if let Some(client) = state.server.get_client_by_name(mute.user.as_str()).await {
-        client.set_mute(mute.mute);
+#[actix_web::post("/mute")]
+pub async fn post_mute(mute: web::Json<Mute>, state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
+    let client = { state.read_err().await?.get_client_by_name(mute.user.as_str()).await? };
 
-        StatusCode::OK
-    } else {
-        StatusCode::NOT_FOUND
-    }
+    Ok(match client {
+        Some(client) => {
+            client.write_err().await?.mute(mute.mute);
+
+            HttpResponse::Ok().finish()
+        }
+        None => HttpResponse::NotFound().finish(),
+    })
 }
 
-// #[actix_web::get("/mute/{user}")]
-pub async fn get_mute(Path(username): Path<String>, State(state): State<AppStateRef>) -> Result<Json<Mute>, StatusCode> {
-    if let Some(client) = state.server.get_client_by_name(username.as_str()).await {
-        let mute = Mute {
-            mute: client.is_muted(),
-            user: username,
-        };
+#[actix_web::post("/mute_all")]
+pub async fn post_mute_all(mute_all: web::Json<MuteAll>, state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
+    state.read_err().await?.mute_all.store(mute_all.mute, std::sync::atomic::Ordering::Relaxed);
 
-        return Ok(Json(mute));
-    }
-
-    Err(StatusCode::NOT_FOUND)
+    Ok(HttpResponse::Ok().finish())
 }
 
-pub async fn post_mute_all(State(state): State<AppStateRef>, Json(mute_all): Json<MuteAll>) -> StatusCode {
-    state.server.mute_all.store(mute_all.mute, std::sync::atomic::Ordering::Relaxed);
+#[actix_web::get("/mute/{user}")]
+pub async fn get_mute(user: web::Path<String>, state: web::Data<Arc<RwLock<ServerState>>>) -> Result<HttpResponse, MumbleError> {
+    let username = user.into_inner();
+    let client = { state.read_err().await?.get_client_by_name(username.as_str()).await? };
 
-    StatusCode::OK
+    Ok(match client {
+        Some(client) => {
+            let mute = Mute {
+                mute: { client.read_err().await?.mute },
+                user: username,
+            };
+
+            HttpResponse::Ok().json(&mute)
+        }
+        None => HttpResponse::NotFound().finish(),
+    })
 }

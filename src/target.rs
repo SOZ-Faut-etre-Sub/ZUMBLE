@@ -1,7 +1,7 @@
-use crate::server::constants::ConcurrentHashMap;
+use std::collections::HashSet;
 
 #[derive(Default, Debug)]
 pub struct VoiceTarget {
-    pub sessions: ConcurrentHashMap<u32, ()>,
-    pub channels: ConcurrentHashMap<u32, ()>,
+    pub sessions: HashSet<u32>,
+    pub channels: HashSet<u32>,
 }

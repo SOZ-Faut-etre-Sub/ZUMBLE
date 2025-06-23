@@ -1,17 +1,18 @@
 //! Voice channel packets and codecs
 
-use std::{
-    fmt::Debug,
-    io,
-    io::{Cursor, Read},
-    marker::PhantomData,
-};
-
-use byteorder::ReadBytesExt;
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-
-use super::varint::{BufMutExt, ReadExt};
 use crate::error::DecryptError;
+use byteorder::ReadBytesExt;
+use bytes::Buf;
+use bytes::BufMut;
+use bytes::Bytes;
+use bytes::BytesMut;
+use std::fmt::Debug;
+use std::io;
+use std::io::{Cursor, Read};
+use std::marker::PhantomData;
+
+use super::varint::BufMutExt;
+use super::varint::ReadExt;
 
 /// A packet transmitted via Mumble's voice channel.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,10 +64,10 @@ pub enum VoicePacketPayload {
 
 /// Zero-sized struct indicating server-bound packet direction.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ServerBound;
+pub struct Serverbound;
 /// Zero-sized struct indicating client-bound packet direction.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ClientBound;
+pub struct Clientbound;
 
 /// Sealed trait for indicating voice packet direction.
 ///
@@ -80,7 +81,7 @@ pub trait VoicePacketDst: Default + PartialEq {
     fn write_session_id(buf: &mut BytesMut, session_id: &Self::SessionId);
 }
 
-impl VoicePacketDst for ServerBound {
+impl VoicePacketDst for Serverbound {
     type SessionId = ();
 
     fn read_session_id<T: Read + Sized>(_buf: &mut T) -> Result<Self::SessionId, io::Error> {
@@ -90,12 +91,11 @@ impl VoicePacketDst for ServerBound {
     fn write_session_id(_buf: &mut BytesMut, _session_id: &Self::SessionId) {}
 }
 
-impl VoicePacketDst for ClientBound {
+impl VoicePacketDst for Clientbound {
     type SessionId = u32;
 
     fn read_session_id<T: Read + Sized>(buf: &mut T) -> Result<Self::SessionId, io::Error> {
-        let var_int = buf.read_varint()?;
-        Ok(var_int as u32)
+        Ok(buf.read_varint()? as u32)
     }
 
     fn write_session_id(buf: &mut BytesMut, session_id: &Self::SessionId) {
@@ -103,8 +103,8 @@ impl VoicePacketDst for ClientBound {
     }
 }
 
-impl VoicePacket<ServerBound> {
-    pub fn into_client_bound(self, session_id: u32) -> VoicePacket<ClientBound> {
+impl VoicePacket<Serverbound> {
+    pub fn into_client_bound(self, session_id: u32) -> VoicePacket<Clientbound> {
         match self {
             VoicePacket::Ping { timestamp } => VoicePacket::Ping { timestamp },
             VoicePacket::Audio {

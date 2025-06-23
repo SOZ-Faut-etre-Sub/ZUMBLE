@@ -1,58 +1,85 @@
-use std::sync::{Arc, Weak};
+use crate::client::Client;
+use crate::proto::mumble::ChannelState;
+use crate::sync::RwLock;
+use crate::ServerState;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
-use crate::{client::ClientArc, proto::mumble::ChannelState, server::constants::ConcurrentHashMap};
-
-pub type WeakChannelRef = Weak<Channel>;
-pub type ChannelRef = Arc<Channel>;
-
+#[derive(Debug)]
 pub struct Channel {
     pub id: u32,
-    // pub parent_id: Option<u32>,
+    pub parent_id: Option<u32>,
     pub name: String,
-    // unused, the client will get this via ChannelState anyways
-    // pub description: String,
+    pub description: String,
     pub temporary: bool,
-    pub listeners: ConcurrentHashMap<u32, ClientArc>,
-    pub clients: ConcurrentHashMap<u32, ClientArc>,
-    channel_state_cache: Arc<ChannelState>,
+    pub listeners: HashSet<u32>,
 }
 
 impl Channel {
-    pub fn new(id: u32, parent_id: Option<u32>, name: String, description: String, temporary: bool) -> Arc<Self> {
+    pub fn new(id: u32, parent_id: Option<u32>, name: String, description: String, temporary: bool) -> Self {
+        Self {
+            id,
+            parent_id,
+            name,
+            description,
+            temporary,
+            listeners: HashSet::new(),
+        }
+    }
+
+    pub fn get_channel_state(&self) -> ChannelState {
         let mut state = ChannelState::new();
 
-        state.set_channel_id(id);
-        state.set_name(name.clone());
-        state.set_description(description.clone());
+        state.set_channel_id(self.id);
+        state.set_name(self.name.clone());
+        state.set_description(self.description.clone());
 
-        if let Some(parent_id) = parent_id {
+        if let Some(parent_id) = self.parent_id {
             state.set_parent(parent_id);
         }
 
-        state.set_temporary(temporary);
-        state.set_position(id as i32);
+        state.set_temporary(self.temporary);
+        state.set_position(self.id as i32);
 
-        Arc::new(Self {
-            id,
-            channel_state_cache: Arc::new(state),
-            // parent_id,
-            name,
-            // description,
-            temporary,
-            clients: ConcurrentHashMap::new(),
-            listeners: ConcurrentHashMap::new(),
-        })
+        state
     }
 
-    pub fn get_channel_state(&self) -> Arc<ChannelState> {
-        Arc::clone(&self.channel_state_cache)
-    }
+    pub async fn get_listeners(&self, state: Arc<RwLock<ServerState>>) -> HashMap<u32, Arc<RwLock<Client>>> {
+        let mut listening_clients = HashMap::new();
 
-    // pub fn get_listeners(&self) -> &ConcurrentHashMap<u32, ClientArc> {
-    //     &self.listeners
-    // }
+        let state_read = match state.read_err().await {
+            Ok(s) => s,
+            Err(err) => {
+                tracing::error!("failed to get listeners: {}", err);
 
-    pub fn get_clients(&self) -> &ConcurrentHashMap<u32, ClientArc> {
-        &self.clients
+                return listening_clients;
+            }
+        };
+
+        for client in state_read.clients.values() {
+            {
+                let client_read = match client.read_err().await {
+                    Ok(c) => c,
+                    Err(err) => {
+                        tracing::error!("failed to get client: {}", err);
+
+                        continue;
+                    }
+                };
+
+                if client_read.channel_id.load(Ordering::Relaxed) == self.id {
+                    listening_clients.insert(client_read.session_id, client.clone());
+                }
+            }
+        }
+
+        for client_id in &self.listeners {
+            if let Some(client) = state_read.clients.get(client_id) {
+                listening_clients.insert(*client_id, client.clone());
+            }
+        }
+
+        listening_clients
     }
 }

@@ -1,10 +1,12 @@
-use super::MumbleResult;
-use crate::{
-    client::ClientArc,
-    handler::Handler,
-    proto::{MessageKind, mumble::PermissionQuery},
-    state::ServerStateRef,
-};
+use crate::client::Client;
+use crate::error::MumbleError;
+use crate::handler::Handler;
+use crate::proto::mumble::PermissionQuery;
+use crate::proto::MessageKind;
+use crate::sync::RwLock;
+use crate::ServerState;
+use async_trait::async_trait;
+use std::sync::Arc;
 
 // const PERM_NONE: u32 = 0x0;
 // const PERM_WRITE: u32 = 0x1;
@@ -29,14 +31,15 @@ const PERM_BAN: u32 = 0x20000;
 const PERM_DEFAULT: u32 = PERM_TRAVERSE | PERM_ENTER | PERM_SPEAK | PERM_WHISPER | PERM_TEXTMESSAGE | PERM_MAKETEMPCHANNEL | PERM_LISTEN;
 const PERM_ADMIN: u32 = PERM_DEFAULT | PERM_MUTEDEAFEN | PERM_MOVE | PERM_KICK | PERM_BAN;
 
+#[async_trait]
 impl Handler for PermissionQuery {
-    async fn handle(&self, _state: &ServerStateRef, client: &ClientArc) -> MumbleResult {
+    async fn handle(&self, _state: Arc<RwLock<ServerState>>, client: Arc<RwLock<Client>>) -> Result<(), MumbleError> {
         let mut pq = PermissionQuery::new();
         pq.set_channel_id(self.get_channel_id());
         pq.set_permissions(PERM_ADMIN);
 
         {
-            client.send_message(MessageKind::PermissionQuery, &pq).await?;
+            client.read_err().await?.send_message(MessageKind::PermissionQuery, &pq).await?;
         }
 
         Ok(())
