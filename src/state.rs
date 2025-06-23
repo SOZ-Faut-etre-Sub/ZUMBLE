@@ -12,7 +12,7 @@ use scc::ebr::Guard;
 use tokio::{
     io::WriteHalf,
     net::{TcpStream, UdpSocket},
-    sync::mpsc::{Sender, error::TrySendError},
+    sync::mpsc::Sender,
 };
 use tokio_rustls::server::TlsStream;
 
@@ -130,9 +130,13 @@ impl ServerState {
             publisher,
         );
 
-        if let Ok(_) = self.clients.insert(session_id, Arc::clone(&client)) {
-            crate::metrics::CLIENTS_TOTAL.inc();
-        }
+        crate::metrics::CLIENTS_TOTAL.inc();
+        let _ = self.clients.insert(session_id, Arc::clone(&client));
+        // if let Some(ref_count) = self.clients_by_peer.get(&peer_ip) {
+        //     ref_count.fetch_add(1, Ordering::SeqCst);
+        // } else {
+        //     self.clients_by_peer.upsert_async(peer_ip, AtomicU32::new(1)).await;
+        // }
 
         let _ = self.clients_without_udp.insert(session_id, Arc::downgrade(&client));
 
@@ -183,15 +187,17 @@ impl ServerState {
         tracing::trace!("broadcast message: {:?}, {:?}", std::any::type_name::<T>(), message);
 
         let bytes = message_to_bytes(kind, message)?;
+
+        let bytes = Arc::new(bytes);
+
         let guard = Guard::new();
 
         for (_k, client) in self.clients.iter(&guard) {
             match client.publisher.try_send(ClientMessage::SendMessage {
                 kind,
-                payload: bytes.clone(),
+                payload: Arc::clone(&bytes),
             }) {
                 Ok(_) => {}
-                Err(TrySendError::Closed(_)) => {}
                 Err(err) => {
                     tracing::error!("failed to send message to {}: {}", client, err);
                 }
@@ -232,7 +238,7 @@ impl ServerState {
     pub async fn set_client_channel(&self, client: &ClientArc, channel: u32) -> Result<(), MumbleError> {
         let leave_channel_id = client.join_channel(channel);
 
-        tracing::debug!(
+        tracing::info!(
             "Client: {} joined channel {} and left channel {:?}",
             client.session_id,
             channel,

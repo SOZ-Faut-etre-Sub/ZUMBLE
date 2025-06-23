@@ -1,4 +1,4 @@
-use std::sync::atomic::Ordering;
+use std::sync::{atomic::Ordering};
 
 use super::MumbleResult;
 use crate::{
