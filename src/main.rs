@@ -92,7 +92,6 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[tokio::main]
 async fn main() {
-    // let console_layer = console_subscriber::spawn();
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();

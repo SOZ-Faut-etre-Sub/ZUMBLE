@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use bytes::Bytes;
 
 use crate::{
@@ -11,5 +9,5 @@ use crate::{
 pub enum ClientMessage {
     RouteVoicePacket(VoicePacket<ClientBound>),
     SendVoicePacket(VoicePacket<ClientBound>),
-    SendMessage { kind: MessageKind, payload: Arc<Bytes> },
+    SendMessage { kind: MessageKind, payload: Bytes },
 }
