@@ -13,6 +13,7 @@ mod message;
 mod metrics;
 mod proto;
 mod server;
+mod secrets;
 mod state;
 mod sync;
 mod target;
@@ -27,6 +28,7 @@ use crate::state::ServerState;
 use crate::sync::RwLock;
 use clap::Parser;
 use rustls_pemfile::{certs, pkcs8_private_keys};
+use secrets::resolve_credential;
 use std::fs::File;
 use std::io;
 use std::io::BufReader;
@@ -51,7 +53,7 @@ struct Args {
     http_user: String,
     /// Password for the http server api basic authentification
     #[clap(long, value_parser)]
-    http_password: String,
+    http_password: Option<String>,
     /// Use TLS for the http server (https), will use the same certificate as the mumble server
     #[clap(long)]
     https: bool,
@@ -85,6 +87,28 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
+
+    // Resolve credentials: *_FILE > ENV > CLI flag > default
+    let http_user = resolve_credential(
+        "HTTP_USER_FILE",
+        "HTTP_USER",
+        Some(args.http_user.clone()),
+        Some("admin"),
+    ).expect("Unable to resolve HTTP_USER");
+
+    let http_password = resolve_credential(
+        "HTTP_PASSWORD_FILE",
+        "HTTP_PASSWORD",
+        args.http_password.clone(),
+        None, // no default for password
+    ).unwrap_or_else(|| {
+        eprintln!(
+            "HTTP_PASSWORD missing. Provide --http-password, HTTP_PASSWORD, \
+             or HTTP_PASSWORD_FILE pointing to a file."
+        );
+        std::process::exit(2);
+    });
+
 
     let certs = match load_certs(args.cert.as_str()) {
         Ok(certs) => certs,
@@ -156,8 +180,8 @@ async fn main() {
         config,
         args.https,
         state.clone(),
-        args.http_user,
-        args.http_password,
+        http_user,
+        http_password,
         args.http_log,
     );
 

@@ -28,4 +28,4 @@ EXPOSE 8080/tcp
 
 ENV RUST_LOG=info
 
-CMD ["/zumble", "--http-password", "changeme"]
+ENTRYPOINT ["/zumble"]
