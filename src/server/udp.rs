@@ -9,13 +9,36 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::io::Cursor;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio_util::sync::CancellationToken;
 
 use super::constants::{MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
+
+fn create_udp_socket(socket_address: SocketAddr) -> std::io::Result<Arc<UdpSocket>> {
+    let socket = Socket::new(Domain::for_address(socket_address), Type::DGRAM, Some(Protocol::UDP)).expect("Failed to create UDP socket");
+
+    let socket_address: socket2::SockAddr = socket_address.into();
+
+    #[cfg(target_os = "linux")]
+    {
+        socket.set_reuse_port(true)?;
+    }
+
+    socket.set_nonblocking(true)?;
+
+    if socket_address.is_ipv6() {
+        socket.set_only_v6(false)?;
+    }
+
+    socket.bind(&socket_address).expect("Failed to bind UDP socket to port");
+
+    let tokio_socket = UdpSocket::from_std(socket.into())?;
+
+    Ok(Arc::new(tokio_socket))
+}
 
 pub async fn create_udp_server(socket_address: String, protocol_version: u32, state: ServerStateRef, _cancel_token: CancellationToken) {
     let shards = if cfg!(target_os = "linux") {
@@ -24,25 +47,12 @@ pub async fn create_udp_server(socket_address: String, protocol_version: u32, st
         1
     };
 
+    let address: SocketAddr = socket_address
+        .parse()
+        .expect("Expected address to be a valid address (i.e. [::1]:30120)");
+
     let sockets: Vec<Arc<UdpSocket>> = (0..shards)
-        .map(|_| {
-            let socket = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP)).expect("Failed to create UDP socket");
-
-            let address: SocketAddr = socket_address
-                .parse()
-                .expect("Expected address to be a valid address (i.e. [::1]:30120)");
-
-            socket.bind(&address.into()).expect("Failed to bind UDP socket to port");
-
-            #[cfg(target_os = "linux")]
-            {
-                socket.set_reuse_address(true).expect("Failed to UDP allow socket resuse");
-            }
-
-            socket.set_nonblocking(true).expect("Failed to set UDP socket to no blocking");
-
-            Arc::new(UdpSocket::from_std(socket.into()).expect("somehow managed to failed to convert UDP socket to std"))
-        })
+        .map(|_| create_udp_socket(address.clone()).expect("Failed to create UDP socket"))
         .collect();
 
     for socket in sockets {

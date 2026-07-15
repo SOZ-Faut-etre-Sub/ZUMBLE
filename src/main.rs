@@ -58,10 +58,10 @@ struct Args {
     #[clap(long, action = clap::ArgAction::HelpLong)]
     help: Option<bool>,
     /// Listen address for TCP and UDP connections for mumble voip clients (or other clients that support the mumble protocol)
-    #[clap(short, long, value_parser, default_value = "0.0.0.0:64738")]
-    listen: String,
+    #[clap(short, long, value_parser, default_value = "[::]:64738")]
+    listen_address: String,
     /// Listen address for HTTP connections for the admin api
-    #[clap(short, long, value_parser, default_value = "0.0.0.0:8080")]
+    #[clap(short, long, value_parser, default_value = "[::]:8080")]
     http_listen: String,
     /// User for the http server api basic authentification
     #[clap(long, value_parser, default_value = "admin")]
@@ -127,15 +127,13 @@ async fn main() {
     let state = Arc::new(ServerState::new(args.strip_mumble_position, args.restrict_to_version));
     let udp_state = state.clone();
 
-    tracing::info!("tcp/udp server start listening on {}", args.listen);
+    tracing::info!("tcp/udp server start listening on {}", args.listen_address);
 
     let cancelation_token = CancellationToken::new();
 
-    let socket_address = args.listen.clone();
+    let socket_address = args.listen_address.clone();
 
-    set.spawn(async move {
-        create_udp_server(socket_address, version, udp_state, cancelation_token.clone()).await;
-    });
+    create_udp_server(socket_address, version, udp_state, cancelation_token.clone()).await;
 
     let clean_state = state.clone();
 
@@ -143,7 +141,10 @@ async fn main() {
         handle_server_tick(clean_state).await;
     });
 
-    let tcp_addr: SocketAddr = args.listen.parse().expect("Got invalid data for 'listen', it was not a usable ip");
+    let tcp_addr: SocketAddr = args
+        .listen_address
+        .parse()
+        .expect("Got invalid data for 'listen', it was not a usable ip");
 
     let tcp_listener = TcpListener::bind(tcp_addr).await.expect("failed to bind to tcp address");
     let tcp_state = state.clone();
