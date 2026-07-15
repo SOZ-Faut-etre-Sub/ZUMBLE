@@ -69,7 +69,6 @@ pub struct ServerState {
     pub channels: ConcurrentHashMap<u32, ChannelRef>,
     pub disconnect_queue: ConcurrentHashMap<u32, DisconnectReason>,
     pub codec_state: Arc<CodecState>,
-    pub socket: Arc<UdpSocket>,
     pub restrict_to_version: Arc<Option<String>>,
     // used only for logging
     pub debug_message_id: AtomicU64,
@@ -80,7 +79,7 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    pub fn new(socket: Arc<UdpSocket>, remove_positional_data: bool, restrict_to_version: Option<String>) -> Self {
+    pub fn new(remove_positional_data: bool, restrict_to_version: Option<String>) -> Self {
         let channels = ConcurrentHashMap::new();
         let _ = channels.insert(0, Channel::new(0, Some(0), "Root".to_string(), "Root channel".to_string(), false));
 
@@ -97,7 +96,6 @@ impl ServerState {
             // clients_by_peer: ConcurrentHashMap::with_capacity(MAX_CLIENTS),
             channels,
             codec_state: Arc::new(CodecState::default()),
-            socket,
             debug_message_id: AtomicU64::new(0),
             session_count: AtomicU32::new(1),
             channel_count: AtomicU32::new(1),
@@ -116,16 +114,7 @@ impl ServerState {
     ) -> ClientArc {
         let session_id = self.get_free_session_id();
 
-        let client = Client::new(
-            version,
-            authenticate,
-            session_id,
-            0,
-            crypt_state,
-            write,
-            Arc::clone(&self.socket),
-            publisher,
-        );
+        let client = Client::new(version, authenticate, session_id, 0, crypt_state, write, publisher);
 
         crate::metrics::CLIENTS_TOTAL.inc();
         self.active_clients.fetch_add(1, Ordering::Relaxed);
@@ -172,7 +161,8 @@ impl ServerState {
         None
     }
 
-    pub async fn set_client_socket(&self, client: &ClientArc, addr: SocketAddr) {
+    pub async fn set_client_socket(&self, client: &ClientArc, udp_socket: Arc<UdpSocket>, addr: SocketAddr) {
+        client.outbound_udp_socket.store(Some(udp_socket));
         let socket_lock = client.udp_socket_addr.swap(Some(Arc::new(addr)));
         if let Some(exiting_addr) = socket_lock {
             self.clients_by_socket.remove_async(exiting_addr.as_ref()).await;
@@ -332,6 +322,7 @@ impl ServerState {
 
     pub async fn find_client_with_decrypt(
         &self,
+        socket: &Arc<UdpSocket>,
         bytes: &mut BytesMut,
         addr: SocketAddr,
     ) -> Result<Option<(ClientArc, VoicePacket<ServerBound>)>, MumbleError> {
@@ -350,7 +341,7 @@ impl ServerState {
 
                 match decrypt_result {
                     Ok(p) => {
-                        self.set_client_socket(&c, addr).await;
+                        self.set_client_socket(&c, socket.clone(), addr).await;
                         client_and_packet = Some((c, p));
                         break;
                     }

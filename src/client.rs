@@ -58,7 +58,8 @@ pub struct Client {
     pub udp_socket_addr: ArcSwapOption<SocketAddr>,
     // Token used to cancel any tasks related to this client, i.e. tcp/udp loops
     pub cancel_token: CancellationToken,
-    pub udp_socket: Arc<UdpSocket>,
+    // this will get set whenever we first join
+    pub outbound_udp_socket: ArcSwapOption<UdpSocket>,
     // TODO: We should properly split UDP/TCP to seperate publishers.
     pub publisher: Sender<ClientMessage>,
     pub targets: VoiceTargetArray,
@@ -114,7 +115,6 @@ impl Client {
         channel_id: u32,
         crypt_state: CryptState,
         write: WriteHalf<TlsStream<TcpStream>>,
-        udp_socket: Arc<UdpSocket>,
         publisher: Sender<ClientMessage>,
     ) -> Arc<Self> {
         // let tokens = authenticate.get_tokens().iter().map(|token| token.to_string()).collect();
@@ -133,9 +133,9 @@ impl Client {
             deaf: AtomicBool::new(false),
             mute: AtomicBool::new(false),
             udp_socket_addr: ArcSwapOption::from(None),
+            outbound_udp_socket: ArcSwapOption::from(None),
             cancel_token: CancellationToken::new(),
             authenticate,
-            udp_socket,
             publisher,
             targets,
             last_tcp_ping: AtomicCell::new(Instant::now()),
@@ -325,7 +325,9 @@ impl Client {
     }
 
     pub async fn send_voice_packet(&self, packet: VoicePacket<ClientBound>) -> Result<(), MumbleError> {
-        if let Some(addr) = self.udp_socket_addr.load_full() {
+        if let Some(addr) = self.udp_socket_addr.load_full()
+            && let Some(outbound_socket) = self.outbound_udp_socket.load_full()
+        {
             let mut dest = BytesMut::new();
 
             {
@@ -335,7 +337,7 @@ impl Client {
             let buf = &dest.freeze()[..];
 
             // we're doing real time audio, if we can't send this in 10 millis then the information no longer matters.
-            match timeout(Duration::from_millis(10), self.udp_socket.send_to(buf, addr.as_ref())).await {
+            match timeout(Duration::from_millis(10), outbound_socket.send_to(buf, addr.as_ref())).await {
                 Ok(Ok(_)) => Ok(()),
                 Ok(Err(e)) => Err(MumbleError::Io(e)),
                 Err(_) => Err(MumbleError::PacketDiscarded),

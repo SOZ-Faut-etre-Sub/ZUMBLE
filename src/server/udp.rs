@@ -7,6 +7,7 @@ use anyhow::anyhow;
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use bytes::BytesMut;
+use socket2::{Domain, Protocol, Socket, Type};
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -16,12 +17,44 @@ use tokio_util::sync::CancellationToken;
 
 use super::constants::{MAX_BANDWIDTH_IN_BITS, MAX_CLIENTS};
 
-pub async fn create_udp_server(protocol_version: u32, socket: Arc<UdpSocket>, state: ServerStateRef, _cancel_token: CancellationToken) {
-    loop {
-        match udp_server_run(protocol_version, socket.clone(), state.clone()).await {
-            Ok(_) => (),
-            Err(e) => tracing::error!("udp server error: {:?}", e),
-        }
+pub async fn create_udp_server(socket_address: String, protocol_version: u32, state: ServerStateRef, _cancel_token: CancellationToken) {
+    let shards = if cfg!(target_os = "linux") {
+        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4)
+    } else {
+        1
+    };
+
+    let sockets: Vec<Arc<UdpSocket>> = (0..shards)
+        .map(|_| {
+            let socket = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP)).expect("Failed to create UDP socket");
+
+            let address: SocketAddr = socket_address
+                .parse()
+                .expect("Expected address to be a valid address (i.e. [::1]:30120)");
+
+            socket.bind(&address.into()).expect("Failed to bind UDP socket to port");
+
+            #[cfg(target_os = "linux")]
+            {
+                socket.set_reuse_address(true).expect("Failed to UDP allow socket resuse");
+            }
+
+            socket.set_nonblocking(true).expect("Failed to set UDP socket to no blocking");
+
+            Arc::new(UdpSocket::from_std(socket.into()).expect("somehow managed to failed to convert UDP socket to std"))
+        })
+        .collect();
+
+    for socket in sockets {
+        let state = state.clone();
+        tokio::spawn(async move {
+            loop {
+                match udp_server_run(protocol_version, socket.clone(), state.clone()).await {
+                    Ok(_) => (),
+                    Err(e) => tracing::error!("udp server error: {:?}", e),
+                }
+            }
+        });
     }
 }
 
@@ -30,12 +63,10 @@ async fn udp_server_run(protocol_version: u32, socket: Arc<UdpSocket>, state: Se
     if let Ok((size, addr)) = socket.recv_from(&mut buffer).await {
         buffer.resize(size, 0);
 
-        tokio::spawn(async move {
-            match handle_packet(buffer, size, addr, protocol_version, socket, state).await {
-                Ok(_) => (),
-                Err(e) => tracing::error!("udp server handle packet error: {:?}", e),
-            }
-        });
+        match handle_packet(buffer, size, addr, protocol_version, socket, state).await {
+            Ok(_) => (),
+            Err(e) => tracing::error!("udp server handle packet error: {:?}", e),
+        }
     }
 
     Ok(())
@@ -147,7 +178,7 @@ async fn handle_packet(
             }
         }
         None => {
-            if let Some((client, packet)) = state.find_client_with_decrypt(&mut buffer, addr).await? {
+            if let Some((client, packet)) = state.find_client_with_decrypt(&socket, &mut buffer, addr).await? {
                 tracing::info!("UDP connected client {} on {}", client, addr);
 
                 (client, packet)

@@ -3,6 +3,7 @@
 
 use rustls::ServerConfig;
 
+use socket2::{Domain, Protocol, Socket, Type};
 #[cfg(not(target_os = "windows"))]
 use tikv_jemallocator::Jemalloc;
 
@@ -44,7 +45,7 @@ use rustls_pki_types::PrivateKeyDer;
 use rustls_pki_types::pem::PemObject;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::net::{TcpListener, UdpSocket};
+use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::rustls::{self};
@@ -123,25 +124,17 @@ async fn main() {
 
     let mut set = JoinSet::new();
 
-    let socket = UdpSocket::bind(&args.listen)
-        .await
-        .expect("UdpSocket couldn't be made for the specified port:ip combo.");
-
-    let udp_socket = Arc::new(socket);
-
-    let state = Arc::new(ServerState::new(
-        udp_socket.clone(),
-        args.strip_mumble_position,
-        args.restrict_to_version,
-    ));
+    let state = Arc::new(ServerState::new(args.strip_mumble_position, args.restrict_to_version));
     let udp_state = state.clone();
 
     tracing::info!("tcp/udp server start listening on {}", args.listen);
 
     let cancelation_token = CancellationToken::new();
 
+    let socket_address = args.listen.clone();
+
     set.spawn(async move {
-        create_udp_server(version, udp_socket, udp_state, cancelation_token.clone()).await;
+        create_udp_server(socket_address, version, udp_state, cancelation_token.clone()).await;
     });
 
     let clean_state = state.clone();
